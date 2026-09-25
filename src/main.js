@@ -1,0 +1,6851 @@
+import './style.css'
+import { io } from 'socket.io-client'
+
+// ========================================
+// حالة اللعبة
+// ========================================
+// ========================================
+// 🌐 اللعب أونلاين
+// ========================================
+
+const ONLINE_SERVER_URL =
+  `${window.location.protocol}//${window.location.hostname}:3001`
+
+const socket = io(
+  import.meta.env.DEV
+    ? `http://${window.location.hostname}:3001`
+    : window.location.origin
+)
+
+let onlineRoomCode = null
+let onlinePlayerColor = null
+let onlineMode = false
+let onlineOpponentConnected = false
+
+
+// ========================================
+// 🌐 أحداث الاتصال الأونلاين
+// ========================================
+
+socket.on('player-joined', () => {
+  if (!onlineMode) return
+
+  onlineOpponentConnected = true
+  updateOnlineTurnUI()
+})
+
+socket.on('game-move', (move) => {
+  if (!onlineMode) return
+
+  applyRemoteOnlineMove(move)
+})
+
+socket.on('restart-game', () => {
+  if (!onlineMode) return
+
+  document
+    .querySelector('.game-result-overlay')
+    ?.remove()
+
+  onlineOpponentConnected = true
+  startOnlineGame()
+})
+
+socket.on('player-left', () => {
+  if (!onlineMode) return
+
+  onlineOpponentConnected = false
+
+  if (!gameOver) {
+    finishGame(
+      'فزت! خصمك خرج من المباراة 👑'
+    )
+  }
+})
+
+socket.on('connect_error', (error) => {
+  console.error(
+    'تعذر الاتصال بسيرفر الأونلاين:',
+    error
+  )
+
+  if (onlineMode && !gameOver) {
+    setTurnText(
+      'تعذر الاتصال بالسيرفر'
+    )
+  }
+})
+
+let selectedPiece = null
+let currentLevel = null
+let currentTurn = 'cream'
+let mustContinueCapture = false
+let gameOver = false
+// ========================================
+// ☠️ Worker مستوى أتحداك تفوز
+// ========================================
+
+let impossibleWorker = null
+let impossibleThinkTimer = null
+// ========================================
+// 👤 الملف الشخصي والإحصائيات
+// ========================================
+
+const PROFILE_KEY = 'damagame_profile_v1'
+
+let currentGameMoves = 0
+let currentGameRecorded = false
+
+
+function createDefaultProfile() {
+  return {
+    name: 'لاعب',
+
+    games: 0,
+    wins: 0,
+    losses: 0,
+    totalMoves: 0,
+
+    levels: {
+      easy: {
+        played: 0,
+        wins: 0,
+        losses: 0
+      },
+
+      medium: {
+        played: 0,
+        wins: 0,
+        losses: 0
+      },
+
+      hard: {
+        played: 0,
+        wins: 0,
+        losses: 0
+      },
+
+      impossible: {
+        played: 0,
+        wins: 0,
+        losses: 0
+      }
+    },
+
+    history: []
+  }
+}
+
+
+function loadProfile() {
+  const defaultProfile =
+    createDefaultProfile()
+
+  try {
+    const saved =
+      localStorage.getItem(
+        PROFILE_KEY
+      )
+
+    if (!saved) {
+      return defaultProfile
+    }
+
+    const data =
+      JSON.parse(saved)
+
+    return {
+      ...defaultProfile,
+      ...data,
+
+      levels: {
+        easy: {
+          ...defaultProfile.levels.easy,
+          ...(data.levels?.easy || {})
+        },
+
+        medium: {
+          ...defaultProfile.levels.medium,
+          ...(data.levels?.medium || {})
+        },
+
+        hard: {
+          ...defaultProfile.levels.hard,
+          ...(data.levels?.hard || {})
+        },
+
+        impossible: {
+          ...defaultProfile.levels.impossible,
+          ...(data.levels?.impossible || {})
+        }
+      },
+
+      history:
+        Array.isArray(data.history)
+          ? data.history
+          : []
+    }
+  }
+
+  catch (error) {
+    console.error(
+      'خطأ في تحميل الملف الشخصي:',
+      error
+    )
+
+    return defaultProfile
+  }
+}
+
+
+let playerProfile =
+  loadProfile()
+
+
+function saveProfile() {
+  localStorage.setItem(
+    PROFILE_KEY,
+    JSON.stringify(playerProfile)
+  )
+}
+
+
+function savePlayerName(name) {
+  const cleanName =
+    String(name)
+      .trim()
+      .slice(0, 20)
+
+  if (!cleanName) {
+    return false
+  }
+
+  playerProfile.name =
+    cleanName
+
+  saveProfile()
+
+  return true
+}
+
+
+// ========================================
+// تسجيل نتيجة مباراة
+// ========================================
+
+function recordGameResult(
+  playerWon
+) {
+  // يمنع تسجيل نفس المباراة مرتين
+  if (currentGameRecorded) {
+    return
+  }
+
+  currentGameRecorded = true
+
+  const level =
+    currentLevel || 'easy'
+
+  if (!playerProfile.levels[level]) {
+    playerProfile.levels[level] = {
+      played: 0,
+      wins: 0,
+      losses: 0
+    }
+  }
+
+  playerProfile.games++
+  playerProfile.totalMoves +=
+    currentGameMoves
+
+  playerProfile
+    .levels[level]
+    .played++
+
+  if (playerWon) {
+    playerProfile.wins++
+
+    playerProfile
+      .levels[level]
+      .wins++
+  }
+
+  else {
+    playerProfile.losses++
+
+    playerProfile
+      .levels[level]
+      .losses++
+  }
+
+  // ========================================
+  // سجل آخر المباريات
+  // ========================================
+
+  playerProfile.history.unshift({
+    result:
+      playerWon
+        ? 'win'
+        : 'loss',
+
+    level,
+
+    moves:
+      currentGameMoves,
+
+    date:
+      new Date()
+        .toLocaleString(
+          'ar-SA'
+        )
+  })
+
+  // نحفظ آخر 20 مباراة فقط
+  playerProfile.history =
+    playerProfile.history.slice(
+      0,
+      20
+    )
+
+  saveProfile()
+}
+
+// ========================================
+// الصفحة الرئيسية
+// ========================================
+
+function showHome() {
+  stopImpossibleWorker()
+
+  if (onlineMode) {
+    leaveOnlineRoom()
+  }
+
+  selectedPiece = null
+  currentTurn = 'cream'
+  mustContinueCapture = false
+  gameOver = false
+
+  document.querySelector('#app').innerHTML = `
+    <main class="home">
+
+      <!-- زر الملف الشخصي -->
+      <button id="profileBtn" class="profile-top-btn">
+        <span class="profile-top-icon">👤</span>
+        <span id="profileButtonName">لاعب</span>
+      </button>
+
+
+      <!-- ========================================
+           الصفحة الرئيسية العادية
+           ======================================== -->
+
+      <section id="homeMainContent">
+
+      
+
+        <h1 class="game-title">الدامة</h1>
+
+        <p class="subtitle">
+          العب الدامة مع أصدقائك أو تحدَّ الذكاء الاصطناعي
+        </p>
+
+        <div class="menu">
+          <button id="newGameBtn" class="primary-btn">
+            لعبة جديدة
+          </button>
+
+          <button class="secondary-btn">
+            ♛ لوحة الصدارة
+          </button>
+        </div>
+
+        
+
+      </section>
+
+
+      <!-- ========================================
+           الملف الشخصي
+           ======================================== -->
+
+      <section
+        id="profileView"
+        class="profile-view"
+        hidden
+      >
+
+        <div class="profile-page-header">
+          <button
+            id="profileBackBtn"
+            class="profile-back-btn"
+          >
+            ← رجوع
+          </button>
+
+          <div>
+            <div class="profile-big-avatar">
+              👤
+            </div>
+
+            <h2 id="profilePageName">
+              لاعب
+            </h2>
+
+            <p>
+              إحصائياتك في الدامة
+            </p>
+          </div>
+        </div>
+
+
+        <!-- تعديل الاسم -->
+
+        <div class="profile-section">
+
+          <h3>
+            الاسم
+          </h3>
+
+          <div class="profile-name-editor">
+
+            <input
+              id="profileNameInput"
+              type="text"
+              maxlength="20"
+              placeholder="اكتب اسمك"
+            >
+
+            <button
+              id="saveProfileNameBtn"
+              class="profile-save-btn"
+            >
+              حفظ الاسم
+            </button>
+
+          </div>
+
+          <p
+            id="profileSaveMessage"
+            class="profile-save-message"
+          ></p>
+
+        </div>
+
+
+        <!-- الإحصائيات العامة -->
+
+        <div class="profile-section">
+
+          <h3>
+            الإحصائيات
+          </h3>
+
+          <div class="profile-stats-grid">
+
+            <div class="profile-stat-card">
+              <span>المباريات</span>
+              <strong id="profileGames">0</strong>
+            </div>
+
+            <div class="profile-stat-card">
+              <span>الانتصارات</span>
+              <strong id="profileWins">0</strong>
+            </div>
+
+            <div class="profile-stat-card">
+              <span>الخسائر</span>
+              <strong id="profileLosses">0</strong>
+            </div>
+
+            <div class="profile-stat-card">
+              <span>حركاتك</span>
+              <strong id="profileMoves">0</strong>
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- إحصائيات المستويات -->
+
+        <div class="profile-section">
+
+          <h3>
+            حسب مستوى الصعوبة
+          </h3>
+
+          <div class="level-stats-list">
+
+            <div class="level-stat-row">
+              <div>
+                <strong>سهل</strong>
+                <small id="easyPlayed">
+                  0 مباراة
+                </small>
+              </div>
+
+              <div class="level-results">
+                <span id="easyWins">
+                  0 فوز
+                </span>
+
+                <span id="easyLosses">
+                  0 خسارة
+                </span>
+              </div>
+            </div>
+
+
+            <div class="level-stat-row">
+              <div>
+                <strong>متوسط</strong>
+                <small id="mediumPlayed">
+                  0 مباراة
+                </small>
+              </div>
+
+              <div class="level-results">
+                <span id="mediumWins">
+                  0 فوز
+                </span>
+
+                <span id="mediumLosses">
+                  0 خسارة
+                </span>
+              </div>
+            </div>
+
+
+            <div class="level-stat-row">
+              <div>
+                <strong>صعب</strong>
+                <small id="hardPlayed">
+                  0 مباراة
+                </small>
+              </div>
+
+              <div class="level-results">
+                <span id="hardWins">
+                  0 فوز
+                </span>
+
+                <span id="hardLosses">
+                  0 خسارة
+                </span>
+              </div>
+            </div>
+
+
+            <div class="level-stat-row impossible-row">
+
+              <div>
+                <strong>
+                  ☠️ أتحداك تفوز
+                </strong>
+
+                <small id="impossiblePlayed">
+                  0 مباراة
+                </small>
+              </div>
+
+              <div class="level-results">
+                <span id="impossibleWins">
+                  0 فوز
+                </span>
+
+                <span id="impossibleLosses">
+                  0 خسارة
+                </span>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- آخر المباريات -->
+
+        <div class="profile-section">
+
+          <h3>
+            آخر المباريات
+          </h3>
+
+          <div id="gameHistory">
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+
+    <!-- نافذة لعبة جديدة -->
+
+    <div id="gameModal" class="modal">
+
+      <div class="modal-box">
+
+        <button
+          id="closeModal"
+          class="close-btn"
+        >
+          ×
+        </button>
+
+        <h2>
+          لعبة جديدة
+        </h2>
+
+        <p class="modal-description">
+          اختر طريقة اللعب
+        </p>
+
+        <div class="game-options">
+
+          <button
+            id="friendBtn"
+            class="game-option"
+          >
+
+            <span class="option-icon">
+              ♟♟
+            </span>
+
+            <span class="option-text">
+
+              <strong>
+                العب مع صديق
+              </strong>
+
+              <small>
+                أنشئ غرفة أو انضم باستخدام كود
+              </small>
+
+            </span>
+
+          </button>
+
+
+          <button
+            id="aiBtn"
+            class="game-option"
+          >
+
+            <span class="option-icon">
+              ♛
+            </span>
+
+            <span class="option-text">
+
+              <strong>
+                العب ضد الكمبيوتر
+              </strong>
+
+              <small>
+                اختر مستوى الصعوبة وتحدَّ الذكاء الاصطناعي
+              </small>
+
+            </span>
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  `
+
+  setupHomeEvents()
+
+  updateProfileUI()
+}
+
+// ========================================
+// أحداث الرئيسية
+// ========================================
+function updateProfileUI() {
+
+  // ========================================
+  // الاسم
+  // ========================================
+
+  const buttonName =
+    document.querySelector(
+      '#profileButtonName'
+    )
+
+  const pageName =
+    document.querySelector(
+      '#profilePageName'
+    )
+
+  const nameInput =
+    document.querySelector(
+      '#profileNameInput'
+    )
+
+  if (buttonName) {
+    buttonName.textContent =
+      playerProfile.name
+  }
+
+  if (pageName) {
+    pageName.textContent =
+      playerProfile.name
+  }
+
+  if (nameInput) {
+    nameInput.value =
+      playerProfile.name
+  }
+
+
+  // ========================================
+  // الإحصائيات العامة
+  // ========================================
+
+  document.querySelector(
+    '#profileGames'
+  ).textContent =
+    playerProfile.games
+
+  document.querySelector(
+    '#profileWins'
+  ).textContent =
+    playerProfile.wins
+
+  document.querySelector(
+    '#profileLosses'
+  ).textContent =
+    playerProfile.losses
+
+  document.querySelector(
+    '#profileMoves'
+  ).textContent =
+    playerProfile.totalMoves
+
+
+  // ========================================
+  // المستويات
+  // ========================================
+
+  updateLevelProfileStats(
+    'easy'
+  )
+
+  updateLevelProfileStats(
+    'medium'
+  )
+
+  updateLevelProfileStats(
+    'hard'
+  )
+
+  updateLevelProfileStats(
+    'impossible'
+  )
+
+
+  // ========================================
+  // آخر المباريات
+  // ========================================
+
+  renderGameHistory()
+}
+
+
+function updateLevelProfileStats(
+  level
+) {
+  const stats =
+    playerProfile.levels[level]
+
+  if (!stats) return
+
+  document.querySelector(
+    `#${level}Played`
+  ).textContent =
+    `${stats.played} مباراة`
+
+  document.querySelector(
+    `#${level}Wins`
+  ).textContent =
+    `${stats.wins} فوز`
+
+  document.querySelector(
+    `#${level}Losses`
+  ).textContent =
+    `${stats.losses} خسارة`
+}
+
+
+function renderGameHistory() {
+
+  const historyBox =
+    document.querySelector(
+      '#gameHistory'
+    )
+
+  if (!historyBox) return
+
+  historyBox.innerHTML = ''
+
+  if (
+    playerProfile.history.length === 0
+  ) {
+
+    const empty =
+      document.createElement('p')
+
+    empty.className =
+      'empty-history'
+
+    empty.textContent =
+      'ما لعبت أي مباراة إلى الآن.'
+
+    historyBox.appendChild(empty)
+
+    return
+  }
+
+
+  playerProfile.history
+    .forEach(game => {
+
+      const item =
+        document.createElement('div')
+
+      item.className =
+        'history-game-item'
+
+
+      const result =
+        document.createElement('div')
+
+      result.className =
+        game.result === 'win'
+          ? 'history-result history-win'
+          : 'history-result history-loss'
+
+      result.textContent =
+        game.result === 'win'
+          ? '✓ فوز'
+          : '✕ خسارة'
+
+
+      const info =
+        document.createElement('div')
+
+      info.className =
+        'history-game-info'
+
+
+      const level =
+        document.createElement('strong')
+
+      level.textContent =
+        getLevelName(game.level)
+
+
+      const details =
+        document.createElement('small')
+
+      details.textContent =
+        `${game.moves} حركة • ${game.date}`
+
+
+      info.appendChild(level)
+      info.appendChild(details)
+
+      item.appendChild(result)
+      item.appendChild(info)
+
+      historyBox.appendChild(item)
+    })
+}
+function setupHomeEvents() {
+
+  const modal =
+    document.querySelector(
+      '#gameModal'
+    )
+
+  const mainContent =
+    document.querySelector(
+      '#homeMainContent'
+    )
+
+  const profileView =
+    document.querySelector(
+      '#profileView'
+    )
+
+
+  // ========================================
+  // فتح الملف الشخصي
+  // ========================================
+
+  document
+    .querySelector('#profileBtn')
+    .addEventListener(
+      'click',
+      () => {
+
+        mainContent.hidden = true
+        profileView.hidden = false
+
+        updateProfileUI()
+      }
+    )
+
+
+  // ========================================
+  // الرجوع من الملف الشخصي
+  // ========================================
+
+  document
+    .querySelector('#profileBackBtn')
+    .addEventListener(
+      'click',
+      () => {
+
+        profileView.hidden = true
+        mainContent.hidden = false
+      }
+    )
+
+
+  // ========================================
+  // حفظ الاسم
+  // ========================================
+
+  document
+    .querySelector(
+      '#saveProfileNameBtn'
+    )
+    .addEventListener(
+      'click',
+      () => {
+
+        const input =
+          document.querySelector(
+            '#profileNameInput'
+          )
+
+        const message =
+          document.querySelector(
+            '#profileSaveMessage'
+          )
+
+        const saved =
+          savePlayerName(
+            input.value
+          )
+
+        if (!saved) {
+
+          message.textContent =
+            'اكتب اسم صحيح.'
+
+          return
+        }
+
+        message.textContent =
+          'تم حفظ الاسم ✓'
+
+        updateProfileUI()
+
+        setTimeout(() => {
+
+          message.textContent = ''
+
+        }, 1500)
+      }
+    )
+
+
+  // ========================================
+  // لعبة جديدة
+  // ========================================
+
+  document
+    .querySelector('#newGameBtn')
+    .addEventListener(
+      'click',
+      () => {
+
+        modal.classList.add(
+          'show'
+        )
+      }
+    )
+
+
+  document
+    .querySelector('#closeModal')
+    .addEventListener(
+      'click',
+      () => {
+
+        modal.classList.remove(
+          'show'
+        )
+      }
+    )
+
+
+  modal.addEventListener(
+    'click',
+    event => {
+
+      if (event.target === modal) {
+
+        modal.classList.remove(
+          'show'
+        )
+      }
+    }
+  )
+
+
+  // ========================================
+  // ضد الكمبيوتر
+  // ========================================
+
+  document
+    .querySelector('#aiBtn')
+    .addEventListener(
+      'click',
+      showDifficulty
+    )
+
+
+  // ========================================
+  // ضد صديق
+  // ========================================
+
+  document
+  .querySelector('#friendBtn')
+  .addEventListener(
+    'click',
+    showOnlineMenu
+  )
+      }
+      // ========================================
+// 🌐 قائمة اللعب مع صديق
+// ========================================
+
+function showOnlineMenu() {
+
+  const modalBox =
+    document.querySelector('.modal-box')
+
+  modalBox.innerHTML = `
+    <button
+      id="onlineBackBtn"
+      class="back-btn"
+    >
+      →
+    </button>
+
+    <h2>اللعب مع صديق</h2>
+
+    <p class="modal-description">
+      اختر طريقة الدخول
+    </p>
+
+    <div class="game-options">
+
+      <button
+        id="createRoomBtn"
+        class="game-option"
+      >
+        <span class="option-icon">
+          ＋
+        </span>
+
+        <span class="option-text">
+          <strong>
+            إنشاء روم
+          </strong>
+
+          <small>
+            أنشئ جلسة جديدة وأرسل الكود لصديقك
+          </small>
+        </span>
+      </button>
+
+
+      <button
+        id="joinRoomBtn"
+        class="game-option"
+      >
+        <span class="option-icon">
+          #
+        </span>
+
+        <span class="option-text">
+          <strong>
+            الانضمام إلى روم
+          </strong>
+
+          <small>
+            أدخل كود الجلسة المكون من 5 أرقام
+          </small>
+        </span>
+      </button>
+
+    </div>
+  `
+
+
+  // رجوع
+  document
+    .querySelector('#onlineBackBtn')
+    .addEventListener(
+      'click',
+      () => {
+
+        showHome()
+
+        setTimeout(() => {
+          document
+            .querySelector('#gameModal')
+            .classList.add('show')
+        }, 0)
+      }
+    )
+
+
+  // إنشاء روم
+  document
+    .querySelector('#createRoomBtn')
+    .addEventListener(
+      'click',
+      createOnlineRoom
+    )
+
+
+  // الانضمام
+  document
+    .querySelector('#joinRoomBtn')
+    .addEventListener(
+      'click',
+      showJoinRoom
+    )
+}
+// ========================================
+// إنشاء روم أونلاين
+// ========================================
+
+function createOnlineRoom() {
+  socket.emit(
+    'create-room',
+    response => {
+      if (!response?.success) {
+        alert(
+          response?.message ||
+          'تعذر إنشاء الروم'
+        )
+        return
+      }
+
+      onlineRoomCode = response.code
+      onlinePlayerColor = response.color
+      onlineMode = true
+      onlineOpponentConnected = false
+      currentLevel = 'online'
+
+      // صاحب الروم يدخل اللوحة مباشرة
+      // لكنه ينتظر صديقه قبل أن يستطيع الحركة.
+      startOnlineGame()
+    }
+  )
+}
+
+
+// ========================================
+// شاشة إدخال كود الروم
+// ========================================
+
+function showJoinRoom() {
+  const modalBox =
+    document.querySelector('.modal-box')
+
+  modalBox.innerHTML = `
+    <button
+      id="joinBackBtn"
+      class="back-btn"
+    >
+      →
+    </button>
+
+    <h2>
+      الانضمام إلى روم
+    </h2>
+
+    <p class="modal-description">
+      أدخل كود الجلسة
+    </p>
+
+    <input
+      id="roomCodeInput"
+      type="text"
+      inputmode="numeric"
+      maxlength="5"
+      placeholder="00000"
+      class="room-code-input"
+      autocomplete="one-time-code"
+    >
+
+    <button
+      id="confirmJoinRoomBtn"
+      class="primary-btn"
+    >
+      دخول الروم
+    </button>
+
+    <p
+      id="joinRoomError"
+      class="join-room-error"
+    ></p>
+  `
+
+  document
+    .querySelector('#joinBackBtn')
+    .addEventListener(
+      'click',
+      showOnlineMenu
+    )
+
+  document
+    .querySelector('#confirmJoinRoomBtn')
+    .addEventListener(
+      'click',
+      joinOnlineRoom
+    )
+}
+
+
+// ========================================
+// دخول روم
+// ========================================
+
+function joinOnlineRoom() {
+  const input =
+    document.querySelector(
+      '#roomCodeInput'
+    )
+
+  const error =
+    document.querySelector(
+      '#joinRoomError'
+    )
+
+  const code =
+    input.value
+      .trim()
+
+  if (!/^\d{5}$/.test(code)) {
+    error.textContent =
+      'اكتب كود من 5 أرقام'
+
+    return
+  }
+
+  socket.emit(
+    'join-room',
+    code,
+    response => {
+      if (!response?.success) {
+        error.textContent =
+          response?.message ||
+          'تعذر دخول الروم'
+
+        return
+      }
+
+      onlineRoomCode = response.code
+      onlinePlayerColor = response.color
+      onlineMode = true
+      onlineOpponentConnected = true
+      currentLevel = 'online'
+
+      error.textContent = ''
+
+      startOnlineGame()
+    }
+  )
+}
+
+
+// ========================================
+// بدء مباراة الأونلاين
+// ========================================
+
+function startOnlineGame() {
+  stopImpossibleWorker()
+
+  currentLevel = 'online'
+  currentTurn = 'cream'
+  selectedPiece = null
+  mustContinueCapture = false
+  gameOver = false
+  currentGameMoves = 0
+  currentGameRecorded = false
+
+  const localColor =
+    onlinePlayerColor || 'cream'
+
+  const opponentColor =
+    getOppositeColor(localColor)
+
+  const localPieceClass =
+    localColor === 'cream'
+      ? 'cream-player'
+      : 'black-player'
+
+  const opponentPieceClass =
+    opponentColor === 'cream'
+      ? 'cream-player'
+      : 'black-player'
+
+  const localColorName =
+    localColor === 'cream'
+      ? 'الحليبي'
+      : 'الأسود'
+
+  const opponentColorName =
+    opponentColor === 'cream'
+      ? 'الحليبي'
+      : 'الأسود'
+
+  document.querySelector('#app').innerHTML = `
+    <main class="game-page">
+
+      <div class="game-header">
+
+        <button
+          id="exitGameBtn"
+          class="exit-game-btn"
+        >
+          خروج
+        </button>
+
+        <div class="game-info">
+          <h2>الدامة</h2>
+          <p>
+            أونلاين • كود الجلسة
+            <strong id="onlineRoomCodeText">
+              ${onlineRoomCode}
+            </strong>
+          </p>
+        </div>
+
+      </div>
+
+      <div class="turn-box">
+        <span
+          id="turnPiece"
+          class="turn-piece"
+        ></span>
+
+        <span id="turnText">
+          جاري تجهيز المباراة...
+        </span>
+      </div>
+
+      <div id="board" class="board"></div>
+
+      <div class="players">
+
+        <div
+          id="humanPlayer"
+          class="player"
+        >
+          <span
+            class="player-piece ${localPieceClass}"
+          ></span>
+
+          <div>
+            <strong>${playerProfile.name}</strong>
+            <small>أنت • ${localColorName}</small>
+          </div>
+        </div>
+
+        <div class="vs">VS</div>
+
+        <div
+          id="computerPlayer"
+          class="player"
+        >
+          <span
+            class="player-piece ${opponentPieceClass}"
+          ></span>
+
+          <div>
+            <strong>صديقك</strong>
+            <small>${opponentColorName}</small>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  `
+
+  createBoard()
+
+  document
+    .querySelector('#exitGameBtn')
+    .addEventListener(
+      'click',
+      () => {
+        leaveOnlineRoom()
+        showHome()
+      }
+    )
+
+  updatePlayerHighlight()
+  updateOnlineTurnUI()
+}
+
+
+// ========================================
+// تحديث النص والدور في الأونلاين
+// ========================================
+
+function updateOnlineTurnUI() {
+  if (!onlineMode) return
+
+  const turnText =
+    document.querySelector('#turnText')
+
+  if (!turnText) return
+
+  if (!onlineOpponentConnected) {
+    turnText.textContent =
+      `بانتظار صديقك... الكود ${onlineRoomCode}`
+
+    updatePlayerHighlight()
+    return
+  }
+
+  if (currentTurn === onlinePlayerColor) {
+    turnText.textContent = 'دورك'
+  }
+
+  else {
+    turnText.textContent = 'دور خصمك'
+  }
+
+  updatePlayerHighlight()
+}
+
+
+function getOppositeColor(color) {
+  return color === 'cream'
+    ? 'black'
+    : 'cream'
+}
+
+
+// ========================================
+// مغادرة الروم
+// ========================================
+
+function leaveOnlineRoom() {
+  if (
+    onlineMode &&
+    onlineRoomCode
+  ) {
+    socket.emit('leave-room')
+  }
+
+  onlineRoomCode = null
+  onlinePlayerColor = null
+  onlineMode = false
+  onlineOpponentConnected = false
+}
+
+
+// ========================================
+// اختيار حجر اللاعب أونلاين
+// ========================================
+
+function selectOnlinePiece(piece) {
+  if (gameOver) return
+  if (!onlineOpponentConnected) return
+
+  if (
+    currentTurn !== onlinePlayerColor ||
+    piece.dataset.color !== onlinePlayerColor
+  ) {
+    return
+  }
+
+  if (
+    mustContinueCapture &&
+    selectedPiece &&
+    selectedPiece !== piece
+  ) {
+    return
+  }
+
+  const captures =
+    getCaptureMoves(piece)
+
+  if (
+    hasAnyCapture(onlinePlayerColor) &&
+    captures.length === 0
+  ) {
+    return
+  }
+
+  clearHighlights()
+  selectedPiece = piece
+
+  piece.classList.add(
+    'selected-piece'
+  )
+
+  if (captures.length > 0) {
+    captures.forEach(showPlayerMove)
+    return
+  }
+
+  getNormalMoves(piece)
+    .forEach(showPlayerMove)
+}
+
+
+// ========================================
+// تنفيذ حركة اللاعب أونلاين
+// ========================================
+
+function moveSelectedPieceOnline(square) {
+  if (gameOver) return
+  if (!onlineOpponentConnected) return
+
+  if (
+    currentTurn !== onlinePlayerColor ||
+    !selectedPiece ||
+    selectedPiece.dataset.color !==
+      onlinePlayerColor
+  ) {
+    return
+  }
+
+  if (
+    !square.classList.contains(
+      'possible-move'
+    )
+  ) {
+    return
+  }
+
+  const piece = selectedPiece
+  const fromSquare = piece.parentElement
+
+  const fromRow =
+    Number(fromSquare.dataset.row)
+
+  const fromCol =
+    Number(fromSquare.dataset.col)
+
+  const row =
+    Number(square.dataset.row)
+
+  const col =
+    Number(square.dataset.col)
+
+  const captured =
+    square.dataset.capture === 'true'
+
+  const capturedRow = captured
+    ? Number(square.dataset.capturedRow)
+    : null
+
+  const capturedCol = captured
+    ? Number(square.dataset.capturedCol)
+    : null
+
+  const wasKing =
+    piece.dataset.king === 'true'
+
+  if (captured) {
+    const capturedPiece =
+      getPieceAt(
+        capturedRow,
+        capturedCol
+      )
+
+    if (capturedPiece) {
+      capturedPiece.remove()
+    }
+  }
+
+  square.appendChild(piece)
+  promoteIfNeeded(piece)
+
+  currentGameMoves++
+
+  const isKingNow =
+    piece.dataset.king === 'true'
+
+  const justBecameKing =
+    !wasKing && isKingNow
+
+  let continueCapture = false
+  let nextTurn =
+    getOppositeColor(
+      onlinePlayerColor
+    )
+
+  if (
+    captured &&
+    !justBecameKing
+  ) {
+    const more =
+      getCaptureMoves(piece)
+
+    if (more.length > 0) {
+      continueCapture = true
+      nextTurn = onlinePlayerColor
+
+      mustContinueCapture = true
+      clearHighlights(false)
+
+      piece.classList.add(
+        'selected-piece'
+      )
+
+      more.forEach(showPlayerMove)
+
+      setTurnText('أكمل الأكل')
+    }
+  }
+
+  socket.emit(
+    'game-move',
+    {
+      fromRow,
+      fromCol,
+      row,
+      col,
+      color: onlinePlayerColor,
+      capture: captured,
+      capturedRow,
+      capturedCol,
+      continueCapture,
+      nextTurn
+    }
+  )
+
+  if (continueCapture) {
+    return
+  }
+
+  mustContinueCapture = false
+  clearSelection()
+  currentTurn = nextTurn
+
+  updatePlayerHighlight()
+
+  if (checkGameStatus()) {
+    return
+  }
+
+  updateOnlineTurnUI()
+}
+
+
+// ========================================
+// تطبيق حركة الخصم القادمة من السيرفر
+// ========================================
+
+function applyRemoteOnlineMove(move) {
+  if (
+    !onlineMode ||
+    gameOver ||
+    !move
+  ) {
+    return
+  }
+
+  const fromRow = Number(move.fromRow)
+  const fromCol = Number(move.fromCol)
+  const row = Number(move.row)
+  const col = Number(move.col)
+
+  const piece =
+    getPieceAt(
+      fromRow,
+      fromCol
+    )
+
+  const target =
+    getSquare(row, col)
+
+  if (
+    !piece ||
+    !target ||
+    piece.dataset.color !== move.color
+  ) {
+    console.error(
+      'تعذر تطبيق حركة الخصم:',
+      move
+    )
+
+    return
+  }
+
+  if (move.capture) {
+    const capturedPiece =
+      getPieceAt(
+        Number(move.capturedRow),
+        Number(move.capturedCol)
+      )
+
+    if (capturedPiece) {
+      capturedPiece.remove()
+    }
+  }
+
+  target.appendChild(piece)
+  promoteIfNeeded(piece)
+
+  clearSelection()
+  mustContinueCapture = false
+
+  currentTurn =
+    move.nextTurn ||
+    getOppositeColor(move.color)
+
+  updatePlayerHighlight()
+
+  if (checkGameStatus()) {
+    return
+  }
+
+  updateOnlineTurnUI()
+}
+
+// ========================================
+// اختيار الصعوبة
+// ========================================
+
+function showDifficulty() {
+  const modalBox = document.querySelector('.modal-box')
+
+  modalBox.innerHTML = `
+    <button id="backBtn" class="back-btn">→</button>
+
+    <h2>ضد الكمبيوتر</h2>
+
+    <p class="modal-description">
+      اختر مستوى الصعوبة
+    </p>
+
+    <div class="difficulty-options">
+
+      <button class="difficulty-btn" data-level="easy">
+        <span class="difficulty-title">سهل</span>
+        <span class="difficulty-description">
+          مناسب لتعلم اللعبة
+        </span>
+      </button>
+
+      <button class="difficulty-btn" data-level="medium">
+        <span class="difficulty-title">متوسط</span>
+        <span class="difficulty-description">
+          تحدي متوازن
+        </span>
+      </button>
+
+      <button class="difficulty-btn" data-level="hard">
+        <span class="difficulty-title">صعب</span>
+        <span class="difficulty-description">
+          خصم يفكر في خطواته
+        </span>
+      </button>
+      <button class="difficulty-btn" data-level="impossible">
+  <span class="difficulty-title">☠️ أتحداك تفوز</span>
+
+  <span class="difficulty-description">
+    ذكاء خارق • يفكر بعمق شديد
+  </span>
+</button>
+
+    </div>
+  `
+
+  document
+    .querySelector('#backBtn')
+    .addEventListener('click', () => {
+      showHome()
+
+      setTimeout(() => {
+        document
+          .querySelector('#gameModal')
+          .classList.add('show')
+      }, 0)
+    })
+
+  document
+    .querySelectorAll('.difficulty-btn')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        startGame(button.dataset.level)
+      })
+    })
+}
+
+function getLevelName(level) {
+  if (level === 'easy') return 'سهل'
+
+  if (level === 'medium') {
+    return 'متوسط'
+  }
+
+  if (level === 'hard') {
+    return 'صعب'
+  }
+
+  if (level === 'impossible') {
+    return '☠️ أتحداك تفوز'
+  }
+
+  if (level === 'online') {
+    return 'أونلاين'
+  }
+
+  return ''
+}
+
+// ========================================
+// بدء اللعبة
+// ========================================
+
+function startGame(level) {
+  if (onlineMode) {
+    leaveOnlineRoom()
+  }
+
+  currentLevel = level
+  currentTurn = 'cream'
+  selectedPiece = null
+  mustContinueCapture = false
+  gameOver = false
+currentGameMoves = 0
+currentGameRecorded = false
+
+  document.querySelector('#app').innerHTML = `
+    <main class="game-page">
+
+      <div class="game-header">
+
+        <button id="exitGameBtn" class="exit-game-btn">
+          خروج
+        </button>
+
+        <div class="game-info">
+          <h2>الدامة</h2>
+          <p>
+            ضد الكمبيوتر • ${getLevelName(level)}
+          </p>
+        </div>
+
+      </div>
+
+      <div class="turn-box">
+        <span
+          id="turnPiece"
+          class="turn-piece cream-turn"
+        ></span>
+
+        <span id="turnText">
+          دورك
+        </span>
+      </div>
+
+      <div id="board" class="board"></div>
+
+      <div class="players">
+
+        <div
+          id="humanPlayer"
+          class="player active-player"
+        >
+          <span class="player-piece cream-player"></span>
+
+          <div>
+            <strong>أنت</strong>
+            <small>الحليبي</small>
+          </div>
+        </div>
+
+        <div class="vs">VS</div>
+
+        <div
+          id="computerPlayer"
+          class="player"
+        >
+          <span class="player-piece black-player"></span>
+
+          <div>
+            <strong>الكمبيوتر</strong>
+            <small>${getLevelName(level)}</small>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  `
+
+  createBoard()
+
+  document
+    .querySelector('#exitGameBtn')
+    .addEventListener('click', showHome)
+}
+
+// ========================================
+// إنشاء الرقعة
+// ========================================
+
+function createBoard() {
+  const board = document.querySelector('#board')
+
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const square = document.createElement('div')
+
+      square.classList.add('square')
+
+      square.dataset.row = row
+      square.dataset.col = col
+
+      const dark = (row + col) % 2 === 1
+
+      square.classList.add(
+        dark
+          ? 'dark-square'
+          : 'light-square'
+      )
+
+      // الأسود
+      if (dark && row < 3) {
+        square.appendChild(
+          createPiece('black')
+        )
+      }
+
+      // الحليبي
+      if (dark && row > 4) {
+        square.appendChild(
+          createPiece('cream')
+        )
+      }
+
+      square.addEventListener('click', () => {
+        moveSelectedPiece(square)
+      })
+
+      board.appendChild(square)
+    }
+  }
+}
+
+// ========================================
+// إنشاء حجر
+// ========================================
+
+function createPiece(color) {
+  const piece = document.createElement('div')
+
+  piece.classList.add(
+    'checker-piece',
+    color === 'cream'
+      ? 'cream-checker'
+      : 'black-checker'
+  )
+
+  piece.dataset.color = color
+  piece.dataset.king = 'false'
+
+  if (
+    color === 'cream' ||
+    onlineMode
+  ) {
+    piece.addEventListener(
+      'click',
+      event => {
+        event.stopPropagation()
+        selectPiece(piece)
+      }
+    )
+  }
+
+  return piece
+}
+
+// ========================================
+// الحصول على خانة
+// ========================================
+
+function getSquare(row, col) {
+  if (
+    row < 0 ||
+    row > 7 ||
+    col < 0 ||
+    col > 7
+  ) {
+    return null
+  }
+
+  return document.querySelector(
+    `.square[data-row="${row}"][data-col="${col}"]`
+  )
+}
+
+// ========================================
+// الحصول على حجر
+// ========================================
+
+function getPieceAt(row, col) {
+  const square = getSquare(row, col)
+
+  if (!square) return null
+
+  return square.querySelector(
+    '.checker-piece'
+  )
+}
+
+// ========================================
+// الحركات العادية
+// ========================================
+
+function getNormalMoves(piece) {
+  const moves = []
+
+  const square = piece.parentElement
+
+  const row = Number(square.dataset.row)
+  const col = Number(square.dataset.col)
+
+  const color = piece.dataset.color
+  const king = piece.dataset.king === 'true'
+
+  // ========================================
+  // الملك الطائر
+  // يتحرك أي مسافة على القطر
+  // ========================================
+
+  if (king) {
+    const directions = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1]
+    ]
+
+    directions.forEach(([dr, dc]) => {
+      let newRow = row + dr
+      let newCol = col + dc
+
+      while (true) {
+        const target =
+          getSquare(
+            newRow,
+            newCol
+          )
+
+        // خرجنا من الرقعة
+        if (!target) {
+          break
+        }
+
+        // وجدنا حجرًا
+        // لا نستطيع المرور من خلاله
+        if (
+          getPieceAt(
+            newRow,
+            newCol
+          )
+        ) {
+          break
+        }
+
+        // الخانة فاضية
+        moves.push({
+          row: newRow,
+          col: newCol,
+          capture: false
+        })
+
+        // نكمل على نفس القطر
+        newRow += dr
+        newCol += dc
+      }
+    })
+
+    return moves
+  }
+
+  // ========================================
+  // الحجر العادي
+  // ========================================
+
+  const directions =
+    color === 'cream'
+      ? [
+          [-1, -1],
+          [-1, 1]
+        ]
+      : [
+          [1, -1],
+          [1, 1]
+        ]
+
+  directions.forEach(([dr, dc]) => {
+    const newRow = row + dr
+    const newCol = col + dc
+
+    const target =
+      getSquare(
+        newRow,
+        newCol
+      )
+
+    if (
+      target &&
+      !getPieceAt(
+        newRow,
+        newCol
+      )
+    ) {
+      moves.push({
+        row: newRow,
+        col: newCol,
+        capture: false
+      })
+    }
+  })
+
+  return moves
+}
+
+// ========================================
+// حركات الأكل
+// ========================================
+
+function getCaptureMoves(piece) {
+  const moves = []
+
+  const square = piece.parentElement
+
+  const row = Number(
+    square.dataset.row
+  )
+
+  const col = Number(
+    square.dataset.col
+  )
+
+  const color =
+    piece.dataset.color
+
+  const isKing =
+    piece.dataset.king === 'true'
+
+  // ========================================
+  // الملك
+  // يرى الخصم من بعيد
+  // لكن يهبط مربع واحد فقط بعده
+  // ========================================
+
+  if (isKing) {
+    const directions = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1]
+    ]
+
+    for (const [dr, dc] of directions) {
+      let checkRow = row + dr
+      let checkCol = col + dc
+
+      // نبحث على طول القطر
+      while (
+        checkRow >= 0 &&
+        checkRow < 8 &&
+        checkCol >= 0 &&
+        checkCol < 8
+      ) {
+        const targetPiece =
+          getPieceAt(
+            checkRow,
+            checkCol
+          )
+
+        // خانة فاضية قبل الخصم
+        // نكمل البحث
+        if (!targetPiece) {
+          checkRow += dr
+          checkCol += dc
+          continue
+        }
+
+        // حجر من نفس اللون
+        // يسكر الطريق
+        if (
+          targetPiece.dataset.color ===
+          color
+        ) {
+          break
+        }
+
+        // ========================================
+        // لقينا حجر خصم
+        // الهبوط يكون أول مربع بعده فقط
+        // ========================================
+
+        const landingRow =
+          checkRow + dr
+
+        const landingCol =
+          checkCol + dc
+
+        const landingSquare =
+          getSquare(
+            landingRow,
+            landingCol
+          )
+
+        // إذا ما فيه مربع بعد الخصم
+        if (!landingSquare) {
+          break
+        }
+
+        // إذا أول مربع بعد الخصم مشغول
+        // ما نقدر نأكل
+        if (
+          getPieceAt(
+            landingRow,
+            landingCol
+          )
+        ) {
+          break
+        }
+
+        // أكلة قانونية واحدة فقط
+        moves.push({
+          row: landingRow,
+          col: landingCol,
+
+          capture: true,
+
+          capturedRow: checkRow,
+          capturedCol: checkCol
+        })
+
+        // لا نضيف مربعات أبعد
+        break
+      }
+    }
+
+    return moves
+  }
+
+  // ========================================
+  // الحجر العادي
+  // الأكل للأمام فقط
+  // ========================================
+
+  const directions =
+    color === 'cream'
+      ? [
+          [-1, -1],
+          [-1, 1]
+        ]
+      : [
+          [1, -1],
+          [1, 1]
+        ]
+
+  for (const [dr, dc] of directions) {
+    const enemyRow =
+      row + dr
+
+    const enemyCol =
+      col + dc
+
+    const landingRow =
+      row + dr * 2
+
+    const landingCol =
+      col + dc * 2
+
+    const enemy =
+      getPieceAt(
+        enemyRow,
+        enemyCol
+      )
+
+    const landing =
+      getSquare(
+        landingRow,
+        landingCol
+      )
+
+    if (!enemy || !landing) {
+      continue
+    }
+
+    if (
+      enemy.dataset.color ===
+      color
+    ) {
+      continue
+    }
+
+    if (
+      getPieceAt(
+        landingRow,
+        landingCol
+      )
+    ) {
+      continue
+    }
+
+    moves.push({
+      row: landingRow,
+      col: landingCol,
+
+      capture: true,
+
+      capturedRow: enemyRow,
+      capturedCol: enemyCol
+    })
+  }
+
+  return moves
+}
+
+// ========================================
+// هل لدى اللون أكل؟
+// ========================================
+
+function hasAnyCapture(color) {
+  const pieces =
+    document.querySelectorAll(
+      `.checker-piece[data-color="${color}"]`
+    )
+
+  for (const piece of pieces) {
+    if (
+      getCaptureMoves(piece).length > 0
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// ========================================
+// جميع الحركات القانونية للون
+// ========================================
+
+function getAllMoves(color) {
+  const pieces = [
+    ...document.querySelectorAll(
+      `.checker-piece[data-color="${color}"]`
+    )
+  ]
+
+  const captureMoves = []
+
+  // الأكل أولًا
+  pieces.forEach((piece) => {
+    getCaptureMoves(piece)
+      .forEach((move) => {
+        captureMoves.push({
+          piece,
+          ...move
+        })
+      })
+  })
+
+  // إذا فيه أكل فهو إجباري
+  if (captureMoves.length > 0) {
+    return captureMoves
+  }
+
+  const normalMoves = []
+
+  pieces.forEach((piece) => {
+    getNormalMoves(piece)
+      .forEach((move) => {
+        normalMoves.push({
+          piece,
+          ...move
+        })
+      })
+  })
+
+  return normalMoves
+}
+
+// ========================================
+// اختيار حجر اللاعب
+// ========================================
+
+function selectPiece(piece) {
+  if (onlineMode) {
+    selectOnlinePiece(piece)
+    return
+  }
+
+  if (gameOver) return
+
+  // ليس دور اللاعب
+  if (currentTurn !== 'cream') {
+    return
+  }
+
+  if (
+    mustContinueCapture &&
+    selectedPiece &&
+    selectedPiece !== piece
+  ) {
+    return
+  }
+
+  const captures =
+    getCaptureMoves(piece)
+
+  // إذا يوجد أكل إجباري بحجر آخر
+  if (
+    hasAnyCapture('cream') &&
+    captures.length === 0
+  ) {
+    return
+  }
+
+  clearHighlights()
+
+  selectedPiece = piece
+
+  piece.classList.add(
+    'selected-piece'
+  )
+
+  // إذا هذا الحجر عنده أكل
+  // نظهر الأكل فقط
+  if (captures.length > 0) {
+    captures.forEach(showPlayerMove)
+    return
+  }
+
+  // لا يوجد أكل
+  // نظهر الحركة العادية
+  getNormalMoves(piece)
+    .forEach(showPlayerMove)
+}
+
+// ========================================
+// إظهار حركة اللاعب على الرقعة
+// ========================================
+
+function showPlayerMove(move) {
+  const square =
+    getSquare(
+      move.row,
+      move.col
+    )
+
+  if (!square) {
+    return
+  }
+
+  // نحدد الخانة كحركة ممكنة
+  square.classList.add(
+    'possible-move'
+  )
+
+  // هل الحركة أكل؟
+  if (move.capture) {
+    square.classList.add(
+      'capture-move'
+    )
+
+    square.dataset.capture =
+      'true'
+
+    square.dataset.capturedRow =
+      move.capturedRow
+
+    square.dataset.capturedCol =
+      move.capturedCol
+  }
+
+  else {
+    square.dataset.capture =
+      'false'
+
+    delete square.dataset.capturedRow
+    delete square.dataset.capturedCol
+  }
+}
+
+// ========================================
+// حركة اللاعب
+// ========================================
+
+function moveSelectedPiece(square) {
+  if (onlineMode) {
+    moveSelectedPieceOnline(square)
+    return
+  }
+
+  if (gameOver) return
+
+  if (currentTurn !== 'cream') {
+    return
+  }
+
+  if (!selectedPiece) return
+
+  if (
+    !square.classList.contains(
+      'possible-move'
+    )
+  ) {
+    return
+  }
+// تسجيل حركة اللاعب
+  currentGameMoves++
+  const captured =
+    square.dataset.capture === 'true'
+
+  // هل كان ملك قبل الحركة؟
+  const wasKing =
+    selectedPiece.dataset.king === 'true'
+
+  // حذف الحجر المأكول
+  if (captured) {
+    const capturedPiece =
+      getPieceAt(
+        Number(
+          square.dataset.capturedRow
+        ),
+        Number(
+          square.dataset.capturedCol
+        )
+      )
+
+    if (capturedPiece) {
+      capturedPiece.remove()
+    }
+  }
+
+  // تحريك الحجر
+  square.appendChild(
+    selectedPiece
+  )
+
+  // ترقية الحجر إذا وصل آخر صف
+  promoteIfNeeded(
+    selectedPiece
+  )
+
+  const isKingNow =
+    selectedPiece.dataset.king === 'true'
+
+  const justBecameKing =
+    !wasKing && isKingNow
+
+  // ========================================
+  // إذا صار ملك الآن
+  // تنتهي حركته فورًا
+  // ولا يكمل أي أكل في نفس الدور
+  // ========================================
+
+  if (justBecameKing) {
+    mustContinueCapture = false
+
+    clearSelection()
+
+    if (checkGameStatus()) {
+      return
+    }
+
+    startComputerTurn()
+    return
+  }
+
+  // ========================================
+  // الأكل المتعدد
+  // فقط إذا لم يترقَّ إلى ملك الآن
+  // ========================================
+
+  if (captured) {
+    const more =
+      getCaptureMoves(
+        selectedPiece
+      )
+
+    if (more.length > 0) {
+      mustContinueCapture = true
+
+      clearHighlights(false)
+
+      selectedPiece.classList.add(
+        'selected-piece'
+      )
+
+      more.forEach(
+        showPlayerMove
+      )
+
+      setTurnText(
+        'أكمل الأكل'
+      )
+
+      return
+    }
+  }
+
+  // انتهاء الدور
+  mustContinueCapture = false
+
+  clearSelection()
+
+  if (checkGameStatus()) {
+    return
+  }
+
+  startComputerTurn()
+}
+
+// ========================================
+// بدء دور الكمبيوتر
+// ========================================
+
+function startComputerTurn() {
+  currentTurn = 'black'
+
+  setTurnText(
+    'الكمبيوتر يفكر...'
+  )
+
+  updatePlayerHighlight()
+
+  // تأخير بسيط ليظهر طبيعي
+  setTimeout(() => {
+    computerMove()
+  }, 700)
+}
+
+// ========================================
+// حركة الكمبيوتر
+// ========================================
+
+function computerMove() {
+  if (gameOver) return
+
+  const moves = getAllMoves('black')
+
+  // الكمبيوتر فعلًا ما عنده أي حركة
+  if (moves.length === 0) {
+    finishGame(
+      'فزت! الكمبيوتر لا يملك أي حركة 👑'
+    )
+    return
+  }
+
+  // ========================================
+  // ☠️ أتحداك تفوز
+  // نشغله في Worker حتى ما تتجمد الصفحة
+  // ========================================
+
+  if (currentLevel === 'impossible') {
+    startImpossibleComputerMove(moves)
+    return
+  }
+
+  // باقي المستويات
+  const chosen =
+    chooseComputerMove(moves)
+
+  executeComputerMove(chosen)
+}
+
+// ========================================
+// اختيار حركة الكمبيوتر
+// ========================================
+
+
+  // ========================================
+// ☠️ تشغيل مستوى أتحداك تفوز
+// ========================================
+
+function startImpossibleComputerMove(moves) {
+  // نقفل أي Worker قديم
+  stopImpossibleWorker()
+
+  setTurnText(
+    '☠️ أتحداك تفوز يفكر بعمق...'
+  )
+
+  const startedAt = performance.now()
+
+  // ========================================
+  // عداد وقت التفكير
+  // ========================================
+
+  impossibleThinkTimer = setInterval(() => {
+    if (
+      gameOver ||
+      currentTurn !== 'black'
+    ) {
+      return
+    }
+
+    const seconds = Math.floor(
+      (
+        performance.now() -
+        startedAt
+      ) / 1000
+    )
+
+    setTurnText(
+      `☠️ يفكر بعمق... ${seconds}ث`
+    )
+  }, 1000)
+
+  // ========================================
+  // إنشاء الـ Worker
+  // ========================================
+
+  impossibleWorker = new Worker(
+    new URL(
+      './impossible-worker.js',
+      import.meta.url
+    ),
+    {
+      type: 'module'
+    }
+  )
+
+  // ========================================
+  // استقبال النتيجة من الذكاء
+  // ========================================
+
+  impossibleWorker.onmessage = (event) => {
+    const data = event.data || {}
+
+    // الذكاء ما زال يفكر
+    if (data.type === 'progress') {
+      if (
+        !gameOver &&
+        currentTurn === 'black'
+      ) {
+        setTurnText(
+          `☠️ عمق ${data.depth} • يفكر...`
+        )
+      }
+
+      return
+    }
+
+    // نتجاهل أي رسالة غير النتيجة
+    if (data.type !== 'result') {
+      return
+    }
+
+    stopImpossibleWorker()
+
+    // يمكن اللاعب خرج من المباراة
+    // أثناء تفكير الكمبيوتر
+    if (
+      gameOver ||
+      currentTurn !== 'black'
+    ) {
+      return
+    }
+
+    const steps =
+      Array.isArray(data.steps)
+        ? data.steps
+        : []
+
+    // ========================================
+    // حماية من نتيجة فارغة
+    // ========================================
+
+    if (steps.length === 0) {
+      console.error(
+        'Impossible AI returned no move:',
+        data
+      )
+
+      // نتحقق من الرقعة الحقيقية
+      const freshMoves =
+        getAllMoves('black')
+
+      if (freshMoves.length === 0) {
+        finishGame(
+          'فزت! الكمبيوتر لا يملك أي حركة 👑'
+        )
+
+        return
+      }
+
+      // إذا الـWorker أخطأ
+      // نستخدم مستوى صعب كخطة احتياط
+      const fallback =
+        chooseHardMove(freshMoves)
+
+      executeComputerMove(fallback)
+
+      return
+    }
+
+    // ========================================
+    // تنفيذ الدور الذي اختاره الذكاء
+    // ========================================
+
+    executeImpossibleTurn(
+      steps,
+      0
+    )
+  }
+
+  // ========================================
+  // لو صار خطأ في الـ Worker
+  // ========================================
+
+  impossibleWorker.onerror = (error) => {
+    console.error(
+      'Impossible Worker error:',
+      error
+    )
+
+    stopImpossibleWorker()
+
+    if (
+      gameOver ||
+      currentTurn !== 'black'
+    ) {
+      return
+    }
+
+    // نتأكد من الرقعة الحقيقية
+    const freshMoves =
+      getAllMoves('black')
+
+    if (freshMoves.length === 0) {
+      finishGame(
+        'فزت! الكمبيوتر لا يملك أي حركة 👑'
+      )
+
+      return
+    }
+
+    // نرجع للصعب بدل تعليق اللعبة
+    const fallback =
+      chooseHardMove(freshMoves)
+
+    executeComputerMove(fallback)
+  }
+
+  // ========================================
+  // إرسال الرقعة للذكاء
+  // الحد الأقصى 3 دقائق
+  // ========================================
+
+  impossibleWorker.postMessage({
+    type: 'think',
+
+    board:
+      createAIBoard(),
+
+    maxTimeMs:
+      180000
+  })
+}
+
+
+// ========================================
+// إيقاف Worker
+// ========================================
+
+function stopImpossibleWorker() {
+  // إيقاف عداد التفكير
+  if (impossibleThinkTimer) {
+    clearInterval(
+      impossibleThinkTimer
+    )
+
+    impossibleThinkTimer = null
+  }
+
+  // إيقاف الذكاء
+  if (impossibleWorker) {
+    impossibleWorker.terminate()
+
+    impossibleWorker = null
+  }
+}
+
+
+// ========================================
+// تنفيذ الدور الكامل للذكاء
+// ========================================
+
+function executeImpossibleTurn(
+  steps,
+  index
+) {
+  if (gameOver) return
+
+  if (currentTurn !== 'black') {
+    return
+  }
+
+  // انتهت كل خطوات الدور
+  if (index >= steps.length) {
+    endComputerTurn()
+    return
+  }
+
+  const step =
+    steps[index]
+
+  // ========================================
+  // إيجاد الحجر الحقيقي
+  // ========================================
+
+  const piece =
+    getPieceAt(
+      step.fromRow,
+      step.fromCol
+    )
+
+  if (
+    !piece ||
+    piece.dataset.color !== 'black'
+  ) {
+    console.error(
+      'تعذر إيجاد حجر الكمبيوتر:',
+      step
+    )
+
+    endComputerTurn()
+    return
+  }
+
+  // هل كان ملكًا قبل الحركة؟
+  const wasKing =
+    piece.dataset.king === 'true'
+
+  // ========================================
+  // حذف الحجر المأكول
+  // ========================================
+
+  if (step.capture) {
+    const capturedPiece =
+      getPieceAt(
+        step.capturedRow,
+        step.capturedCol
+      )
+
+    if (capturedPiece) {
+      capturedPiece.remove()
+    }
+  }
+
+  // ========================================
+  // الخانة الجديدة
+  // ========================================
+
+  const target =
+    getSquare(
+      step.row,
+      step.col
+    )
+
+  if (!target) {
+    console.error(
+      'الخانة غير موجودة:',
+      step
+    )
+
+    endComputerTurn()
+    return
+  }
+
+  // تحريك الحجر
+  target.appendChild(piece)
+
+  // ترقية إذا وصل للنهاية
+  promoteIfNeeded(piece)
+
+  const isKingNow =
+    piece.dataset.king === 'true'
+
+  const justBecameKing =
+    !wasKing &&
+    isKingNow
+
+  // ========================================
+  // فحص نهاية المباراة
+  // ========================================
+
+  if (checkGameStatus()) {
+    return
+  }
+
+  // ========================================
+  // قانوننا المهم:
+  //
+  // إذا كان عادي وصار ملك الآن
+  // ينتهي دوره فورًا
+  // حتى لو صار عنده أكل جديد
+  // ========================================
+
+  if (justBecameKing) {
+    endComputerTurn()
+    return
+  }
+
+  const nextIndex =
+    index + 1
+
+  // ========================================
+  // أكلة ثانية في نفس الدور
+  // ========================================
+
+  if (nextIndex < steps.length) {
+    setTurnText(
+      'الكمبيوتر يكمل الأكل...'
+    )
+
+    setTimeout(() => {
+      executeImpossibleTurn(
+        steps,
+        nextIndex
+      )
+    }, 350)
+
+    return
+  }
+
+  // ========================================
+  // انتهى دور الكمبيوتر
+  // ========================================
+
+  endComputerTurn()
+}
+function chooseComputerMove(moves) {
+  // السهل
+  if (currentLevel === 'easy') {
+    return chooseEasyMove(moves)
+  }
+
+  // المتوسط
+  if (currentLevel === 'medium') {
+    return chooseMediumMove(moves)
+  }
+
+  // الصعب
+  if (currentLevel === 'hard') {
+    return chooseHardMove(moves)
+  }
+
+  // ☠️ أتحداك تفوز
+  if (currentLevel === 'impossible') {
+  // المستوى المستحيل يتم تشغيله الآن
+  // من computerMove عن طريق Web Worker
+  return chooseHardMove(moves)
+}
+}
+
+
+// ========================================
+// المستوى السهل
+// حركة عشوائية
+// ========================================
+
+function chooseEasyMove(moves) {
+
+  const randomIndex =
+    Math.floor(
+      Math.random() * moves.length
+    )
+
+  return moves[randomIndex]
+}
+
+
+// ========================================
+// المستوى المتوسط
+// يفحص الحركة ويعطيها نقاط
+// ========================================
+
+function chooseMediumMove(moves) {
+
+  let bestScore = -Infinity
+
+  let bestMoves = []
+
+  moves.forEach((move) => {
+
+    let score = 0
+
+    const piece = move.piece
+
+    const currentSquare =
+      piece.parentElement
+
+    const currentRow =
+      Number(
+        currentSquare.dataset.row
+      )
+
+    const currentCol =
+      Number(
+        currentSquare.dataset.col
+      )
+
+
+    // ==========================
+    // الأكل مهم جدًا
+    // ==========================
+
+    if (move.capture) {
+      score += 100
+    }
+
+
+    // ==========================
+    // الاقتراب من الملك
+    // ==========================
+
+    if (
+      piece.dataset.king !== 'true'
+    ) {
+
+      score += move.row * 8
+
+    }
+
+
+    // ==========================
+    // الوصول إلى الملك
+    // ==========================
+
+    if (
+      piece.dataset.king !== 'true' &&
+      move.row === 7
+    ) {
+
+      score += 180
+
+    }
+
+
+    // ==========================
+    // الملك قيمته أعلى
+    // ==========================
+
+    if (
+      piece.dataset.king === 'true'
+    ) {
+
+      score += 45
+
+    }
+
+
+    // ==========================
+    // الوسط أفضل
+    // ==========================
+
+    if (
+      move.col >= 2 &&
+      move.col <= 5
+    ) {
+
+      score += 12
+
+    }
+
+
+    // ==========================
+    // الحواف فيها حماية
+    // ==========================
+
+    if (
+      move.col === 0 ||
+      move.col === 7
+    ) {
+
+      score += 10
+
+    }
+
+
+    // ==========================
+    // هل الحركة تعرضه للأكل؟
+    // ==========================
+
+    if (
+      computerMoveLooksDangerous(
+        move,
+        currentRow,
+        currentCol
+      )
+    ) {
+
+      score -= 80
+
+    }
+
+
+    // تنويع بسيط جدًا
+    score += Math.random() * 10
+
+
+    if (score > bestScore) {
+
+      bestScore = score
+
+      bestMoves = [move]
+
+    }
+
+    else if (
+      Math.abs(
+        score - bestScore
+      ) < 0.001
+    ) {
+
+      bestMoves.push(move)
+
+    }
+
+  })
+
+
+  return bestMoves[
+    Math.floor(
+      Math.random() *
+      bestMoves.length
+    )
+  ]
+}
+
+
+// ========================================
+// فحص خطر الحركة للمتوسط
+// ========================================
+
+function computerMoveLooksDangerous(
+  move,
+  oldRow,
+  oldCol
+) {
+
+  const board =
+    createAIBoard()
+
+  const piece =
+    board[oldRow][oldCol]
+
+  if (!piece) {
+    return false
+  }
+
+
+  board[oldRow][oldCol] = null
+
+
+  if (move.capture) {
+
+    board[
+      move.capturedRow
+    ][
+      move.capturedCol
+    ] = null
+
+  }
+
+
+  const movedPiece = {
+    ...piece
+  }
+
+
+  if (
+    !movedPiece.king &&
+    move.row === 7
+  ) {
+
+    movedPiece.king = true
+
+  }
+
+
+  board[
+    move.row
+  ][
+    move.col
+  ] = movedPiece
+
+
+  const playerMoves =
+    getAIMoves(
+      board,
+      'cream'
+    )
+
+
+  return playerMoves.some(
+    (playerMove) => {
+
+      return (
+        playerMove.capture &&
+        playerMove.capturedRow ===
+          move.row &&
+        playerMove.capturedCol ===
+          move.col
+      )
+
+    }
+  )
+}
+
+
+// ========================================
+// المستوى الصعب
+// Minimax + Alpha Beta
+// ========================================
+
+function chooseHardMove(moves) {
+  const board = createAIBoard()
+
+  // نحسب الدور الكامل، بما فيه سلسلة الأكل المتتالي
+  const allTurns = getHardTurns(board, 'black')
+
+  if (allTurns.length === 0) {
+    return chooseEasyMove(moves)
+  }
+
+  const pieceCount = countHardPieces(board)
+
+  // كلما قلت القطع نسمح له يبحث أعمق
+  const maxDepth =
+    pieceCount <= 10
+      ? 9
+      : pieceCount <= 16
+        ? 8
+        : 7
+
+  // حد زمني حتى ما يعلق المتصفح
+  const deadline = performance.now() + 1400
+
+  const table = new Map()
+
+  let bestDomMove = moves[0]
+  let completedDepth = 0
+
+  // Iterative Deepening
+  // يبدأ ببحث بسيط ثم يزيد العمق
+  for (
+    let depth = 3;
+    depth <= maxDepth;
+    depth++
+  ) {
+    let bestScore = -Infinity
+    let bestTurn = null
+    let aborted = false
+
+    const ordered =
+      orderHardTurns(
+        board,
+        allTurns,
+        'black'
+      )
+
+    for (const turn of ordered) {
+      if (
+        performance.now() >= deadline
+      ) {
+        aborted = true
+        break
+      }
+
+      const nextBoard =
+        applyHardTurn(
+          board,
+          turn
+        )
+
+      const result =
+        hardMinimax(
+          nextBoard,
+          depth - 1,
+          'cream',
+          -Infinity,
+          Infinity,
+          deadline,
+          table
+        )
+
+      if (result.timeout) {
+        aborted = true
+        break
+      }
+
+      let score = result.score
+
+      // كسر تعادل بسيط وثابت
+      // بدون جعل الصعب عشوائي
+      score +=
+        hardTieBreaker(turn) *
+        0.001
+
+      if (score > bestScore) {
+        bestScore = score
+        bestTurn = turn
+      }
+    }
+
+    // لا نعتمد نتيجة عمق
+    // إذا انتهى الوقت قبل إكماله
+    if (
+      !aborted &&
+      bestTurn
+    ) {
+      completedDepth = depth
+
+      const first =
+        bestTurn.steps[0]
+
+      const match =
+        findDOMMoveForHardStep(
+          moves,
+          first
+        )
+
+      if (match) {
+        bestDomMove = match
+      }
+    }
+
+    else {
+      break
+    }
+  }
+
+  console.log(
+    `Hard AI depth: ${completedDepth}`
+  )
+
+  return bestDomMove
+}
+// ========================================
+// ☠️ أتحداك تفوز
+// مستوى شديد الصعوبة
+// ========================================
+
+function chooseImpossibleMove(moves) {
+  const board = createAIBoard()
+
+  const allTurns =
+    getHardTurns(
+      board,
+      'black'
+    )
+
+  if (allTurns.length === 0) {
+    return chooseHardMove(moves)
+  }
+
+  // إذا فيه حركة قانونية واحدة فقط
+  // ما يحتاج نضيع وقت في التفكير
+  if (allTurns.length === 1) {
+    const first =
+      allTurns[0].steps[0]
+
+    return (
+      findDOMMoveForHardStep(
+        moves,
+        first
+      ) || moves[0]
+    )
+  }
+
+  // ========================================
+  // الوقت الأقصى = 3 دقائق
+  // ========================================
+
+  const MAX_TIME =
+    3 * 60 * 1000
+
+  const startTime =
+    performance.now()
+
+  const deadline =
+    startTime + MAX_TIME
+
+  // ذاكرة ضخمة مشتركة بين الأعماق
+  const table = new Map()
+
+  let bestDomMove = moves[0]
+  let bestTurn = null
+  let bestScore = -Infinity
+
+  let completedDepth = 0
+
+  // ========================================
+  // نظام الثبات
+  // إذا نفس أفضل حركة ثبتت عدة أعماق
+  // وبفارق جيد عن المنافس
+  // يمكنه اللعب قبل انتهاء 3 دقائق
+  // ========================================
+
+  let stableMoveKey = null
+  let stableCount = 0
+
+  // لا نسمح له بالاستعجال جدًا
+  const MIN_THINK_TIME = 2500
+
+  // ========================================
+  // كلما قلت القطع
+  // نسمح بعمق هائل
+  // ========================================
+
+  const pieceCount =
+    countHardPieces(board)
+
+  let maxDepth
+
+  if (pieceCount <= 6) {
+    maxDepth = 40
+  }
+
+  else if (pieceCount <= 10) {
+    maxDepth = 30
+  }
+
+  else if (pieceCount <= 16) {
+    maxDepth = 22
+  }
+
+  else {
+    maxDepth = 18
+  }
+
+  // ========================================
+  // Iterative Deepening
+  // ========================================
+
+  for (
+    let depth = 4;
+    depth <= maxDepth;
+    depth++
+  ) {
+    if (
+      performance.now() >= deadline
+    ) {
+      break
+    }
+
+    let depthBestTurn = null
+    let depthBestScore = -Infinity
+
+    let secondBestScore = -Infinity
+
+    let aborted = false
+
+    // أفضل الحركات أولًا
+    const ordered =
+      orderHardTurns(
+        board,
+        allTurns,
+        'black'
+      )
+
+    // ========================================
+    // إذا عندنا أفضل حركة من العمق السابق
+    // نحاولها أولًا
+    // ========================================
+
+    if (bestTurn) {
+      const previousKey =
+        impossibleTurnKey(bestTurn)
+
+      const index =
+        ordered.findIndex(
+          (turn) =>
+            impossibleTurnKey(turn) ===
+            previousKey
+        )
+
+      if (index > 0) {
+        const previous =
+          ordered.splice(
+            index,
+            1
+          )[0]
+
+        ordered.unshift(previous)
+      }
+    }
+
+    // ========================================
+    // تجربة جميع الحركات
+    // ========================================
+
+    for (const turn of ordered) {
+      if (
+        performance.now() >= deadline
+      ) {
+        aborted = true
+        break
+      }
+
+      const nextBoard =
+        applyHardTurn(
+          board,
+          turn
+        )
+
+      const result =
+        impossibleMinimax(
+          nextBoard,
+          depth - 1,
+          'cream',
+          -Infinity,
+          Infinity,
+          deadline,
+          table,
+          1
+        )
+
+      if (result.timeout) {
+        aborted = true
+        break
+      }
+
+      let score = result.score
+
+      // كسر تعادل ثابت وصغير جدًا
+      score +=
+        hardTieBreaker(turn) *
+        0.0001
+
+      if (
+        score >
+        depthBestScore
+      ) {
+        secondBestScore =
+          depthBestScore
+
+        depthBestScore =
+          score
+
+        depthBestTurn =
+          turn
+      }
+
+      else if (
+        score >
+        secondBestScore
+      ) {
+        secondBestScore =
+          score
+      }
+    }
+
+    // ========================================
+    // إذا ما كمل العمق كامل
+    // ما نعتمد نتيجته
+    // ========================================
+
+    if (
+      aborted ||
+      !depthBestTurn
+    ) {
+      break
+    }
+
+    completedDepth = depth
+
+    bestTurn =
+      depthBestTurn
+
+    bestScore =
+      depthBestScore
+
+    // ========================================
+    // تحويل أفضل حركة
+    // للحركة الحقيقية في DOM
+    // ========================================
+
+    const first =
+      bestTurn.steps[0]
+
+    const match =
+      findDOMMoveForHardStep(
+        moves,
+        first
+      )
+
+    if (match) {
+      bestDomMove = match
+    }
+
+    // ========================================
+    // فحص ثبات أفضل حركة
+    // ========================================
+
+    const currentKey =
+      impossibleTurnKey(
+        bestTurn
+      )
+
+    if (
+      currentKey ===
+      stableMoveKey
+    ) {
+      stableCount++
+    }
+
+    else {
+      stableMoveKey =
+        currentKey
+
+      stableCount = 1
+    }
+
+    const elapsed =
+      performance.now() -
+      startTime
+
+    const scoreGap =
+      depthBestScore -
+      secondBestScore
+
+    console.log(
+      `☠️ Impossible depth ${depth}`,
+      {
+        score:
+          Math.round(
+            depthBestScore
+          ),
+
+        gap:
+          Math.round(
+            scoreGap
+          ),
+
+        stable:
+          stableCount,
+
+        time:
+          Math.round(elapsed)
+      }
+    )
+
+    // ========================================
+    // فوز مؤكد
+    // لا يوجد سبب للانتظار
+    // ========================================
+
+    if (
+      depthBestScore >
+      800000 &&
+      elapsed >
+      MIN_THINK_TIME
+    ) {
+      break
+    }
+
+    // ========================================
+    // أفضل حركة ثبتت
+    //
+    // لا ننتظر 3 دقائق بلا داعي
+    // ========================================
+
+    if (
+      depth >= 10 &&
+      stableCount >= 4 &&
+      scoreGap >= 100 &&
+      elapsed >
+      MIN_THINK_TIME
+    ) {
+      break
+    }
+
+    // ========================================
+    // في نهاية اللعب نكون أكثر صبرًا
+    // ولا نتوقف بسهولة
+    // ========================================
+
+    if (
+      pieceCount <= 10 &&
+      stableCount >= 6 &&
+      depth >= 14 &&
+      scoreGap >= 80 &&
+      elapsed >
+      5000
+    ) {
+      break
+    }
+  }
+
+  console.log(
+    '☠️ أتحداك تفوز:',
+    {
+      depth:
+        completedDepth,
+
+      score:
+        Math.round(bestScore),
+
+      seconds:
+        (
+          (
+            performance.now() -
+            startTime
+          ) / 1000
+        ).toFixed(2),
+
+      positions:
+        table.size
+    }
+  )
+
+  return bestDomMove
+}
+
+
+// ========================================
+// Minimax الخاص بالمستوى المستحيل
+// ========================================
+
+function impossibleMinimax(
+  board,
+  depth,
+  color,
+  alpha,
+  beta,
+  deadline,
+  table,
+  ply
+) {
+  // ========================================
+  // الوقت انتهى
+  // ========================================
+
+  if (
+    performance.now() >= deadline
+  ) {
+    return {
+      score: 0,
+      timeout: true
+    }
+  }
+
+  const blackCount =
+    countHardColor(
+      board,
+      'black'
+    )
+
+  const creamCount =
+    countHardColor(
+      board,
+      'cream'
+    )
+
+  // ========================================
+  // فوز / خسارة
+  // نفضل الفوز الأسرع
+  // ونؤخر الخسارة قدر الإمكان
+  // ========================================
+
+  if (blackCount === 0) {
+    return {
+      score:
+        -10000000 + ply,
+
+      timeout: false
+    }
+  }
+
+  if (creamCount === 0) {
+    return {
+      score:
+        10000000 - ply,
+
+      timeout: false
+    }
+  }
+
+  const turns =
+    getHardTurns(
+      board,
+      color
+    )
+
+  if (turns.length === 0) {
+    return {
+      score:
+        color === 'black'
+          ? -9000000 + ply
+          : 9000000 - ply,
+
+      timeout: false
+    }
+  }
+
+  // ========================================
+  // وصلنا نهاية عمق البحث
+  // ========================================
+
+  if (depth <= 0) {
+    return {
+      score:
+        evaluateImpossibleBoard(
+          board
+        ),
+
+      timeout: false
+    }
+  }
+
+  // ========================================
+  // Transposition Table
+  // ========================================
+
+  const key =
+    `${hardBoardKey(board)}|${color}|${depth}`
+
+  const cached =
+    table.get(key)
+
+  if (
+    cached !== undefined
+  ) {
+    return {
+      score: cached,
+      timeout: false
+    }
+  }
+
+  // ========================================
+  // ترتيب الحركات
+  // مهم جدًا للـ Alpha Beta
+  // ========================================
+
+  const ordered =
+    orderHardTurns(
+      board,
+      turns,
+      color
+    )
+
+  let best =
+    color === 'black'
+      ? -Infinity
+      : Infinity
+
+  for (const turn of ordered) {
+    if (
+      performance.now() >= deadline
+    ) {
+      return {
+        score: 0,
+        timeout: true
+      }
+    }
+
+    const nextBoard =
+      applyHardTurn(
+        board,
+        turn
+      )
+
+    const result =
+      impossibleMinimax(
+        nextBoard,
+        depth - 1,
+
+        color === 'black'
+          ? 'cream'
+          : 'black',
+
+        alpha,
+        beta,
+        deadline,
+        table,
+        ply + 1
+      )
+
+    if (result.timeout) {
+      return result
+    }
+
+    if (color === 'black') {
+      if (
+        result.score > best
+      ) {
+        best =
+          result.score
+      }
+
+      if (best > alpha) {
+        alpha = best
+      }
+    }
+
+    else {
+      if (
+        result.score < best
+      ) {
+        best =
+          result.score
+      }
+
+      if (best < beta) {
+        beta = best
+      }
+    }
+
+    // Alpha-Beta pruning
+    if (beta <= alpha) {
+      break
+    }
+  }
+
+  table.set(
+    key,
+    best
+  )
+
+  return {
+    score: best,
+    timeout: false
+  }
+}
+
+
+// ========================================
+// تقييم أقوى للمستوى المستحيل
+// ========================================
+
+function evaluateImpossibleBoard(
+  board
+) {
+  // نبدأ من تقييم الصعب الحالي
+  let score =
+    evaluateHardBoard(board)
+
+  let blackKings = 0
+  let creamKings = 0
+
+  let blackNearKing = 0
+  let creamNearKing = 0
+
+  // ========================================
+  // فحص القطع بتفصيل أكبر
+  // ========================================
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+      const piece =
+        board[row][col]
+
+      if (!piece) {
+        continue
+      }
+
+      // ========================================
+      // الملوك مهمون جدًا
+      // ========================================
+
+      if (piece.king) {
+        if (
+          piece.color === 'black'
+        ) {
+          blackKings++
+
+          score += 35
+        }
+
+        else {
+          creamKings++
+
+          score -= 35
+        }
+
+        continue
+      }
+
+      // ========================================
+      // قرب الحجر من الترقية
+      // ========================================
+
+      if (
+        piece.color === 'black'
+      ) {
+        const distance =
+          7 - row
+
+        if (distance === 1) {
+          blackNearKing++
+
+          score += 45
+        }
+
+        else if (
+          distance === 2
+        ) {
+          score += 18
+        }
+      }
+
+      else {
+        const distance =
+          row
+
+        if (distance === 1) {
+          creamNearKing++
+
+          score -= 50
+        }
+
+        else if (
+          distance === 2
+        ) {
+          score -= 20
+        }
+      }
+
+      // ========================================
+      // وسط الرقعة
+      // ========================================
+
+      if (
+        row >= 2 &&
+        row <= 5 &&
+        col >= 2 &&
+        col <= 5
+      ) {
+        score +=
+          piece.color === 'black'
+            ? 5
+            : -5
+      }
+    }
+  }
+
+  // ========================================
+  // فرق الملوك
+  // ========================================
+
+  score +=
+    (
+      blackKings -
+      creamKings
+    ) * 30
+
+  // ========================================
+  // القطع القريبة جدًا من الملك
+  // ========================================
+
+  score +=
+    blackNearKing * 15
+
+  score -=
+    creamNearKing * 18
+
+  // ========================================
+  // التهديدات
+  // ========================================
+
+  const blackThreatened =
+    countHardThreatened(
+      board,
+      'black'
+    )
+
+  const creamThreatened =
+    countHardThreatened(
+      board,
+      'cream'
+    )
+
+  score -=
+    blackThreatened * 35
+
+  score +=
+    creamThreatened * 32
+
+  return score
+}
+
+
+// ========================================
+// مفتاح ثابت للدور
+// لمعرفة هل أفضل حركة ثبتت
+// ========================================
+
+function impossibleTurnKey(turn) {
+  return turn.steps
+    .map((step) => {
+      return (
+        `${step.fromRow},` +
+        `${step.fromCol}>` +
+        `${step.row},` +
+        `${step.col}:` +
+        `${step.capture ? 1 : 0}`
+      )
+    })
+    .join('|')
+}
+
+
+// ========================================
+// إنشاء الأدوار الكاملة للصعب
+// ========================================
+
+function getHardTurns(
+  board,
+  color
+) {
+  const captureTurns = []
+
+  // أولًا نبحث عن الأكل
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+      const piece =
+        board[row][col]
+
+      if (
+        !piece ||
+        piece.color !== color
+      ) {
+        continue
+      }
+
+      const captures =
+        getAICaptures(
+          board,
+          row,
+          col
+        )
+
+      for (
+  const capture
+  of captures
+) {
+  const captureWithState = {
+    ...capture,
+
+    wasKingBefore:
+      piece.king
+  }
+
+  const nextBoard =
+    applyAIMove(
+      board,
+      captureWithState
+    )
+
+  buildHardCaptureTurns(
+    nextBoard,
+    capture.row,
+    capture.col,
+    [captureWithState],
+    captureTurns
+  )
+}
+    }
+  }
+
+  // إذا فيه أكل
+  // الأكل إجباري
+  if (
+    captureTurns.length > 0
+  ) {
+    return captureTurns
+  }
+
+  // إذا ما فيه أكل
+  // نولد الحركات العادية
+  const turns = []
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+      const piece =
+        board[row][col]
+
+      if (
+        !piece ||
+        piece.color !== color
+      ) {
+        continue
+      }
+
+      const normalMoves =
+        getAINormalMoves(
+          board,
+          row,
+          col
+        )
+
+      for (
+        const move
+        of normalMoves
+      ) {
+        turns.push({
+          steps: [move]
+        })
+      }
+    }
+  }
+
+  return turns
+}
+
+
+// ========================================
+// بناء سلسلة الأكل كاملة
+// ========================================
+
+function buildHardCaptureTurns(
+  board,
+  row,
+  col,
+  steps,
+  result
+) {
+  const piece =
+    board[row][col]
+
+  if (!piece) {
+    result.push({
+      steps
+    })
+
+    return
+  }
+
+  // ========================================
+  // قانون لعبتنا:
+  // إذا الحجر العادي وصل للملك
+  // في آخر حركة، ينتهي دوره فورًا
+  // ========================================
+
+  const lastMove =
+    steps[
+      steps.length - 1
+    ]
+
+  if (lastMove) {
+    const reachedKingRow =
+      piece.color === 'black'
+        ? lastMove.row === 7
+        : lastMove.row === 0
+
+    // نعرف هل الحركة السابقة
+    // بدأت بحجر عادي
+    const previousBoard =
+      copyAIBoard(board)
+
+    const becameKing =
+      piece.king &&
+      reachedKingRow &&
+      lastMove.wasKingBefore === false
+
+    if (becameKing) {
+      result.push({
+        steps
+      })
+
+      return
+    }
+  }
+
+  const more =
+    getAICaptures(
+      board,
+      row,
+      col
+    )
+
+  // انتهت سلسلة الأكل
+  if (more.length === 0) {
+    result.push({
+      steps
+    })
+
+    return
+  }
+
+  // نجرب جميع احتمالات
+  // الأكل التالي
+  for (const move of more) {
+    const movingPiece =
+      board[row][col]
+
+    const moveWithState = {
+      ...move,
+
+      wasKingBefore:
+        movingPiece
+          ? movingPiece.king
+          : false
+    }
+
+    const nextBoard =
+      applyAIMove(
+        board,
+        moveWithState
+      )
+
+    buildHardCaptureTurns(
+      nextBoard,
+      move.row,
+      move.col,
+      [
+        ...steps,
+        moveWithState
+      ],
+      result
+    )
+  }
+}
+
+
+// ========================================
+// تنفيذ دور كامل داخل نسخة AI
+// ========================================
+
+function applyHardTurn(
+  board,
+  turn
+) {
+  let next =
+    copyAIBoard(board)
+
+  for (
+    const step
+    of turn.steps
+  ) {
+    next =
+      applyAIMove(
+        next,
+        step
+      )
+  }
+
+  return next
+}
+
+
+// ========================================
+// Minimax قوي
+// مع Alpha Beta
+// ========================================
+
+function hardMinimax(
+  board,
+  depth,
+  color,
+  alpha,
+  beta,
+  deadline,
+  table
+) {
+  // انتهى الوقت
+  if (
+    performance.now() >=
+    deadline
+  ) {
+    return {
+      score: 0,
+      timeout: true
+    }
+  }
+
+  const blackCount =
+    countHardColor(
+      board,
+      'black'
+    )
+
+  const creamCount =
+    countHardColor(
+      board,
+      'cream'
+    )
+
+  // الكمبيوتر خسر
+  if (blackCount === 0) {
+    return {
+      score:
+        -1000000 -
+        depth,
+
+      timeout: false
+    }
+  }
+
+  // اللاعب خسر
+  if (creamCount === 0) {
+    return {
+      score:
+        1000000 +
+        depth,
+
+      timeout: false
+    }
+  }
+
+  const turns =
+    getHardTurns(
+      board,
+      color
+    )
+
+  // ما عنده أي حركة
+  if (turns.length === 0) {
+    return {
+      score:
+        color === 'black'
+          ? -900000 - depth
+          : 900000 + depth,
+
+      timeout: false
+    }
+  }
+
+  // نهاية عمق البحث
+  if (depth === 0) {
+    return {
+      score:
+        evaluateHardBoard(
+          board
+        ),
+
+      timeout: false
+    }
+  }
+
+  // ========================================
+  // Transposition Table
+  // يحفظ الوضعيات المحسوبة
+  // ========================================
+
+  const key =
+    `${hardBoardKey(board)}|${color}|${depth}`
+
+  const cached =
+    table.get(key)
+
+  if (
+    cached !== undefined
+  ) {
+    return {
+      score: cached,
+      timeout: false
+    }
+  }
+
+  // ترتيب أفضل الحركات أولًا
+  // يجعل Alpha Beta أقوى
+  const ordered =
+    orderHardTurns(
+      board,
+      turns,
+      color
+    )
+
+  let best =
+    color === 'black'
+      ? -Infinity
+      : Infinity
+
+  for (
+    const turn
+    of ordered
+  ) {
+    const nextBoard =
+      applyHardTurn(
+        board,
+        turn
+      )
+
+    const result =
+      hardMinimax(
+        nextBoard,
+        depth - 1,
+
+        color === 'black'
+          ? 'cream'
+          : 'black',
+
+        alpha,
+        beta,
+        deadline,
+        table
+      )
+
+    if (result.timeout) {
+      return result
+    }
+
+    // دور الكمبيوتر
+    if (
+      color === 'black'
+    ) {
+      best =
+        Math.max(
+          best,
+          result.score
+        )
+
+      alpha =
+        Math.max(
+          alpha,
+          best
+        )
+    }
+
+    // دور اللاعب
+    else {
+      best =
+        Math.min(
+          best,
+          result.score
+        )
+
+      beta =
+        Math.min(
+          beta,
+          best
+        )
+    }
+
+    // Alpha Beta Pruning
+    if (
+      beta <= alpha
+    ) {
+      break
+    }
+  }
+
+  table.set(
+    key,
+    best
+  )
+
+  return {
+    score: best,
+    timeout: false
+  }
+}
+
+
+// ========================================
+// تقييم قوي للرقعة
+// ========================================
+
+function evaluateHardBoard(
+  board
+) {
+  let score = 0
+
+  let blackKings = 0
+  let creamKings = 0
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+      const piece =
+        board[row][col]
+
+      if (!piece) {
+        continue
+      }
+
+      // ========================================
+      // قيمة الحجر
+      // ========================================
+
+      let value =
+        piece.king
+          ? 210
+          : 100
+
+      // ========================================
+      // الملك
+      // ========================================
+
+      if (piece.king) {
+        if (
+          piece.color ===
+          'black'
+        ) {
+          blackKings++
+        }
+
+        else {
+          creamKings++
+        }
+      }
+
+      // ========================================
+      // الحجر العادي
+      // ========================================
+
+      else {
+        const progress =
+          piece.color ===
+          'black'
+            ? row
+            : 7 - row
+
+        // كل ما قرب للملك
+        // تزيد قيمته
+        value +=
+          progress * 8
+
+        // قبل الترقية مباشرة
+        if (
+          progress === 6
+        ) {
+          value += 28
+        }
+      }
+
+      // ========================================
+      // السيطرة على الوسط
+      // ========================================
+
+      if (
+        row >= 2 &&
+        row <= 5 &&
+        col >= 2 &&
+        col <= 5
+      ) {
+        value += 12
+      }
+
+      // ========================================
+      // الحافة
+      // ========================================
+
+      if (
+        col === 0 ||
+        col === 7
+      ) {
+        value += 5
+      }
+
+      // ========================================
+      // حماية الصف الخلفي
+      // ========================================
+
+      if (!piece.king) {
+        if (
+          piece.color ===
+            'black' &&
+          row === 0
+        ) {
+          value += 8
+        }
+
+        if (
+          piece.color ===
+            'cream' &&
+          row === 7
+        ) {
+          value += 8
+        }
+      }
+
+      // ========================================
+      // إضافة النتيجة
+      // ========================================
+
+      if (
+        piece.color ===
+        'black'
+      ) {
+        score += value
+      }
+
+      else {
+        score -= value
+      }
+    }
+  }
+
+  // ========================================
+  // حرية الحركة
+  // ========================================
+
+  const blackTurns =
+    getHardTurns(
+      board,
+      'black'
+    )
+
+  const creamTurns =
+    getHardTurns(
+      board,
+      'cream'
+    )
+
+  score +=
+    (
+      blackTurns.length -
+      creamTurns.length
+    ) * 4
+
+  // ========================================
+  // فرق الملوك
+  // ========================================
+
+  score +=
+    (
+      blackKings -
+      creamKings
+    ) * 20
+
+  // ========================================
+  // سلاسل الأكل
+  // ========================================
+
+  score +=
+    bestHardCaptureLength(
+      blackTurns
+    ) * 32
+
+  score -=
+    bestHardCaptureLength(
+      creamTurns
+    ) * 36
+
+  // ========================================
+  // القطع المعرضة للأكل
+  // ========================================
+
+  score -=
+    countHardThreatened(
+      board,
+      'black'
+    ) * 24
+
+  score +=
+    countHardThreatened(
+      board,
+      'cream'
+    ) * 20
+
+  return score
+}
+
+
+// ========================================
+// ترتيب الحركات
+// ========================================
+
+function orderHardTurns(
+  board,
+  turns,
+  color
+) {
+  return [
+    ...turns
+  ].sort(
+    (a, b) => {
+      return (
+        hardTurnOrderScore(
+          board,
+          b,
+          color
+        ) -
+
+        hardTurnOrderScore(
+          board,
+          a,
+          color
+        )
+      )
+    }
+  )
+}
+
+
+// ========================================
+// تقييم مبدئي لترتيب الحركة
+// ========================================
+
+function hardTurnOrderScore(
+  board,
+  turn,
+  color
+) {
+  const first =
+    turn.steps[0]
+
+  const last =
+    turn.steps[
+      turn.steps.length - 1
+    ]
+
+  const piece =
+    board[
+      first.fromRow
+    ][
+      first.fromCol
+    ]
+
+  let score = 0
+
+  // الأكل المتعدد
+  // يوضع أولًا في البحث
+  score +=
+    turn.steps.length *
+    120
+
+  // الترقية إلى ملك
+  if (
+    piece &&
+    !piece.king
+  ) {
+    if (
+      color === 'black' &&
+      last.row === 7
+    ) {
+      score += 220
+    }
+
+    if (
+      color === 'cream' &&
+      last.row === 0
+    ) {
+      score += 220
+    }
+  }
+
+  // الوسط
+  if (
+    last.row >= 2 &&
+    last.row <= 5 &&
+    last.col >= 2 &&
+    last.col <= 5
+  ) {
+    score += 15
+  }
+
+  // هل بعد الحركة
+  // الخصم عنده أكل قوي؟
+  const next =
+    applyHardTurn(
+      board,
+      turn
+    )
+
+  const enemy =
+    color === 'black'
+      ? 'cream'
+      : 'black'
+
+  const enemyTurns =
+    getHardTurns(
+      next,
+      enemy
+    )
+
+  score -=
+    bestHardCaptureLength(
+      enemyTurns
+    ) * 45
+
+  return score
+}
+
+
+// ========================================
+// أطول سلسلة أكل
+// ========================================
+
+function bestHardCaptureLength(
+  turns
+) {
+  let best = 0
+
+  for (
+    const turn
+    of turns
+  ) {
+    if (
+      turn.steps[0] &&
+      turn.steps[0].capture
+    ) {
+      best =
+        Math.max(
+          best,
+          turn.steps.length
+        )
+    }
+  }
+
+  return best
+}
+
+
+// ========================================
+// عدد القطع المعرضة للأكل
+// ========================================
+
+function countHardThreatened(
+  board,
+  color
+) {
+  const enemy =
+    color === 'black'
+      ? 'cream'
+      : 'black'
+
+  const enemyTurns =
+    getHardTurns(
+      board,
+      enemy
+    )
+
+  const threatened =
+    new Set()
+
+  for (
+    const turn
+    of enemyTurns
+  ) {
+    for (
+      const step
+      of turn.steps
+    ) {
+      if (!step.capture) {
+        continue
+      }
+
+      const victim =
+        board[
+          step.capturedRow
+        ]?.[
+          step.capturedCol
+        ]
+
+      if (
+        victim &&
+        victim.color === color
+      ) {
+        threatened.add(
+          `${step.capturedRow},${step.capturedCol}`
+        )
+      }
+    }
+  }
+
+  return threatened.size
+}
+
+
+// ========================================
+// تحويل الرقعة إلى مفتاح
+// ========================================
+
+function hardBoardKey(
+  board
+) {
+  let key = ''
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+      const piece =
+        board[row][col]
+
+      if (!piece) {
+        key += '.'
+      }
+
+      else if (
+        piece.color ===
+        'black'
+      ) {
+        key +=
+          piece.king
+            ? 'B'
+            : 'b'
+      }
+
+      else {
+        key +=
+          piece.king
+            ? 'C'
+            : 'c'
+      }
+    }
+  }
+
+  return key
+}
+
+
+// ========================================
+// عدد جميع القطع
+// ========================================
+
+function countHardPieces(
+  board
+) {
+  return (
+    countHardColor(
+      board,
+      'black'
+    ) +
+
+    countHardColor(
+      board,
+      'cream'
+    )
+  )
+}
+
+
+// ========================================
+// عدد قطع لون معين
+// ========================================
+
+function countHardColor(
+  board,
+  color
+) {
+  let count = 0
+
+  for (
+    const row
+    of board
+  ) {
+    for (
+      const piece
+      of row
+    ) {
+      if (
+        piece &&
+        piece.color === color
+      ) {
+        count++
+      }
+    }
+  }
+
+  return count
+}
+
+
+// ========================================
+// كسر التعادل بين حركتين متساويتين
+// ========================================
+
+function hardTieBreaker(
+  turn
+) {
+  const last =
+    turn.steps[
+      turn.steps.length - 1
+    ]
+
+  return (
+    (
+      last.row * 8 +
+      last.col +
+      turn.steps.length * 3
+    ) % 17
+  )
+}
+
+
+// ========================================
+// ربط حركة AI بالحركة الحقيقية
+// ========================================
+
+function findDOMMoveForHardStep(
+  moves,
+  step
+) {
+  return (
+    moves.find(
+      (move) => {
+        const square =
+          move.piece
+            ?.parentElement
+
+        if (!square) {
+          return false
+        }
+
+        return (
+          Number(
+            square.dataset.row
+          ) === step.fromRow &&
+
+          Number(
+            square.dataset.col
+          ) === step.fromCol &&
+
+          move.row ===
+            step.row &&
+
+          move.col ===
+            step.col &&
+
+          Boolean(
+            move.capture
+          ) ===
+            Boolean(
+              step.capture
+            )
+        )
+      }
+    ) || null
+  )
+}
+
+
+// ========================================
+// إنشاء نسخة من الرقعة للذكاء
+// ========================================
+
+function createAIBoard() {
+
+  const board =
+    Array.from(
+      { length: 8 },
+      () =>
+        Array(8).fill(null)
+    )
+
+
+  document
+    .querySelectorAll(
+      '.checker-piece'
+    )
+    .forEach((piece) => {
+
+      const square =
+        piece.parentElement
+
+      const row =
+        Number(
+          square.dataset.row
+        )
+
+      const col =
+        Number(
+          square.dataset.col
+        )
+
+
+      board[row][col] = {
+
+        color:
+          piece.dataset.color,
+
+        king:
+          piece.dataset.king ===
+          'true'
+
+      }
+
+    })
+
+
+  return board
+}
+
+
+// ========================================
+// نسخ الرقعة
+// ========================================
+
+function copyAIBoard(board) {
+
+  return board.map(
+    (row) =>
+
+      row.map(
+        (piece) => {
+
+          if (!piece) {
+            return null
+          }
+
+          return {
+            ...piece
+          }
+
+        }
+      )
+
+  )
+}
+
+
+// ========================================
+// التأكد أن الخانة داخل الرقعة
+// ========================================
+
+function isInsideBoard(
+  row,
+  col
+) {
+
+  return (
+    row >= 0 &&
+    row < 8 &&
+    col >= 0 &&
+    col < 8
+  )
+}
+
+
+// ========================================
+// جميع الحركات في نسخة الذكاء
+// ========================================
+
+function getAIMoves(
+  board,
+  color
+) {
+
+  const captures = []
+
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+
+      const piece =
+        board[row][col]
+
+
+      if (
+        !piece ||
+        piece.color !== color
+      ) {
+
+        continue
+
+      }
+
+
+      const pieceCaptures =
+        getAICaptures(
+          board,
+          row,
+          col
+        )
+
+
+      captures.push(
+        ...pieceCaptures
+      )
+
+    }
+
+  }
+
+
+  // الأكل إجباري
+  if (
+    captures.length > 0
+  ) {
+
+    return captures
+
+  }
+
+
+  const moves = []
+
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+
+      const piece =
+        board[row][col]
+
+
+      if (
+        !piece ||
+        piece.color !== color
+      ) {
+
+        continue
+
+      }
+
+
+      moves.push(
+        ...getAINormalMoves(
+          board,
+          row,
+          col
+        )
+      )
+
+    }
+
+  }
+
+
+  return moves
+}
+
+
+// ========================================
+// الحركات العادية للذكاء
+// ========================================
+
+function getAINormalMoves(
+  board,
+  row,
+  col
+) {
+  const piece =
+    board[row][col]
+
+  if (!piece) {
+    return []
+  }
+
+  const moves = []
+
+  // ========================================
+  // الملك
+  // يتحرك بحرية على الأقطار
+  // ========================================
+
+  if (piece.king) {
+    const directions = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1]
+    ]
+
+    for (const [dr, dc] of directions) {
+      let newRow =
+        row + dr
+
+      let newCol =
+        col + dc
+
+      while (
+        isInsideBoard(
+          newRow,
+          newCol
+        )
+      ) {
+        // وجود أي قطعة يوقف الطريق
+        if (
+          board[newRow][newCol]
+        ) {
+          break
+        }
+
+        moves.push({
+          fromRow: row,
+          fromCol: col,
+
+          row: newRow,
+          col: newCol,
+
+          capture: false
+        })
+
+        newRow += dr
+        newCol += dc
+      }
+    }
+
+    return moves
+  }
+
+  // ========================================
+  // الحجر العادي
+  // خطوة واحدة للأمام
+  // ========================================
+
+  const directions =
+    piece.color === 'cream'
+      ? [
+          [-1, -1],
+          [-1, 1]
+        ]
+      : [
+          [1, -1],
+          [1, 1]
+        ]
+
+  for (const [dr, dc] of directions) {
+    const newRow =
+      row + dr
+
+    const newCol =
+      col + dc
+
+    if (
+      !isInsideBoard(
+        newRow,
+        newCol
+      )
+    ) {
+      continue
+    }
+
+    if (
+      board[newRow][newCol]
+    ) {
+      continue
+    }
+
+    moves.push({
+      fromRow: row,
+      fromCol: col,
+
+      row: newRow,
+      col: newCol,
+
+      capture: false
+    })
+  }
+
+  return moves
+}
+
+
+// ========================================
+// الأكل للذكاء
+// ========================================
+
+function getAICaptures(board, row, col) {
+  const piece = board[row][col]
+
+  if (!piece) {
+    return []
+  }
+
+  const captures = []
+
+  // ========================================
+  // الملك
+  // يرى الخصم من بعيد
+  // لكنه يهبط أول مربع بعد الخصم فقط
+  // ========================================
+
+  if (piece.king) {
+    const directions = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1]
+    ]
+
+    for (const [dr, dc] of directions) {
+      let checkRow = row + dr
+      let checkCol = col + dc
+
+      // نمشي على القطر حتى نجد أول قطعة
+      while (
+        isInsideBoard(
+          checkRow,
+          checkCol
+        )
+      ) {
+        const target =
+          board[checkRow][checkCol]
+
+        // مربع فاضي قبل الخصم
+        // نكمل البحث
+        if (!target) {
+          checkRow += dr
+          checkCol += dc
+          continue
+        }
+
+        // قطعة من نفس اللون
+        // تسكر الطريق
+        if (
+          target.color ===
+          piece.color
+        ) {
+          break
+        }
+
+        // ========================================
+        // وجدنا قطعة خصم
+        // ========================================
+
+        const landingRow =
+          checkRow + dr
+
+        const landingCol =
+          checkCol + dc
+
+        // ما فيه مربع بعدها
+        if (
+          !isInsideBoard(
+            landingRow,
+            landingCol
+          )
+        ) {
+          break
+        }
+
+        // أول مربع بعد الخصم مشغول
+        // إذًا ما نقدر نأكل
+        if (
+          board[landingRow][landingCol]
+        ) {
+          break
+        }
+
+        // ========================================
+        // أكلة صحيحة
+        // الهبوط مربع واحد فقط بعد الخصم
+        // ========================================
+
+        captures.push({
+          fromRow: row,
+          fromCol: col,
+
+          row: landingRow,
+          col: landingCol,
+
+          capture: true,
+
+          capturedRow: checkRow,
+          capturedCol: checkCol
+        })
+
+        // ما نضيف مربعات أبعد
+        break
+      }
+    }
+
+    return captures
+  }
+
+  // ========================================
+  // الحجر العادي
+  // يأكل للأمام فقط
+  // ========================================
+
+  const directions =
+    piece.color === 'cream'
+      ? [
+          [-1, -1],
+          [-1, 1]
+        ]
+      : [
+          [1, -1],
+          [1, 1]
+        ]
+
+  for (const [dr, dc] of directions) {
+    const enemyRow =
+      row + dr
+
+    const enemyCol =
+      col + dc
+
+    const landingRow =
+      row + dr * 2
+
+    const landingCol =
+      col + dc * 2
+
+    if (
+      !isInsideBoard(
+        enemyRow,
+        enemyCol
+      ) ||
+      !isInsideBoard(
+        landingRow,
+        landingCol
+      )
+    ) {
+      continue
+    }
+
+    const enemy =
+      board[enemyRow][enemyCol]
+
+    if (!enemy) {
+      continue
+    }
+
+    if (
+      enemy.color ===
+      piece.color
+    ) {
+      continue
+    }
+
+    if (
+      board[landingRow][landingCol]
+    ) {
+      continue
+    }
+
+    captures.push({
+      fromRow: row,
+      fromCol: col,
+
+      row: landingRow,
+      col: landingCol,
+
+      capture: true,
+
+      capturedRow: enemyRow,
+      capturedCol: enemyCol
+    })
+  }
+
+  return captures
+}
+
+
+// ========================================
+// تنفيذ حركة داخل نسخة الذكاء
+// ========================================
+
+function applyAIMove(
+  board,
+  move
+) {
+
+  const newBoard =
+    copyAIBoard(board)
+
+
+  const piece =
+    newBoard[
+      move.fromRow
+    ][
+      move.fromCol
+    ]
+
+
+  if (!piece) {
+
+    return newBoard
+
+  }
+
+
+  newBoard[
+    move.fromRow
+  ][
+    move.fromCol
+  ] = null
+
+
+  if (move.capture) {
+
+    newBoard[
+      move.capturedRow
+    ][
+      move.capturedCol
+    ] = null
+
+  }
+
+
+  const movedPiece = {
+    ...piece
+  }
+
+
+  // ترقية الحليبي
+  if (
+    movedPiece.color ===
+      'cream' &&
+    !movedPiece.king &&
+    move.row === 0
+  ) {
+
+    movedPiece.king = true
+
+  }
+
+
+  // ترقية الأسود
+  if (
+    movedPiece.color ===
+      'black' &&
+    !movedPiece.king &&
+    move.row === 7
+  ) {
+
+    movedPiece.king = true
+
+  }
+
+
+  newBoard[
+    move.row
+  ][
+    move.col
+  ] = movedPiece
+
+
+  return newBoard
+}
+
+
+// ========================================
+// خوارزمية Minimax
+// ========================================
+
+function minimax(
+  board,
+  depth,
+  maximizing,
+  alpha,
+  beta
+) {
+
+  const blackMoves =
+    getAIMoves(
+      board,
+      'black'
+    )
+
+
+  const creamMoves =
+    getAIMoves(
+      board,
+      'cream'
+    )
+
+
+  // الكمبيوتر خسر
+  if (
+    blackMoves.length === 0
+  ) {
+
+    return (
+      -100000 -
+      depth
+    )
+
+  }
+
+
+  // اللاعب خسر
+  if (
+    creamMoves.length === 0
+  ) {
+
+    return (
+      100000 +
+      depth
+    )
+
+  }
+
+
+  // وصلنا لنهاية البحث
+  if (depth === 0) {
+
+    return evaluateAIBoard(
+      board
+    )
+
+  }
+
+
+  // ==========================
+  // دور الكمبيوتر
+  // ==========================
+
+  if (maximizing) {
+
+    let best =
+      -Infinity
+
+
+    for (
+      const move
+      of blackMoves
+    ) {
+
+      const newBoard =
+        applyAIMove(
+          board,
+          move
+        )
+
+
+      const score =
+        minimax(
+          newBoard,
+          depth - 1,
+          false,
+          alpha,
+          beta
+        )
+
+
+      best =
+        Math.max(
+          best,
+          score
+        )
+
+
+      alpha =
+        Math.max(
+          alpha,
+          best
+        )
+
+
+      // Alpha Beta
+      if (
+        beta <= alpha
+      ) {
+
+        break
+
+      }
+
+    }
+
+
+    return best
+
+  }
+
+
+  // ==========================
+  // دور اللاعب
+  // ==========================
+
+  else {
+
+    let best =
+      Infinity
+
+
+    for (
+      const move
+      of creamMoves
+    ) {
+
+      const newBoard =
+        applyAIMove(
+          board,
+          move
+        )
+
+
+      const score =
+        minimax(
+          newBoard,
+          depth - 1,
+          true,
+          alpha,
+          beta
+        )
+
+
+      best =
+        Math.min(
+          best,
+          score
+        )
+
+
+      beta =
+        Math.min(
+          beta,
+          best
+        )
+
+
+      // Alpha Beta
+      if (
+        beta <= alpha
+      ) {
+
+        break
+
+      }
+
+    }
+
+
+    return best
+
+  }
+}
+
+
+// ========================================
+// تقييم الرقعة
+// ========================================
+
+function evaluateAIBoard(board) {
+
+  let score = 0
+
+
+  for (
+    let row = 0;
+    row < 8;
+    row++
+  ) {
+
+    for (
+      let col = 0;
+      col < 8;
+      col++
+    ) {
+
+      const piece =
+        board[row][col]
+
+
+      if (!piece) {
+        continue
+      }
+
+
+      // الحجر العادي = 100
+      // الملك = 180
+
+      let value =
+        piece.king
+          ? 180
+          : 100
+
+
+      // ==========================
+      // الاقتراب من الملك
+      // ==========================
+
+      if (!piece.king) {
+
+        if (
+          piece.color ===
+          'black'
+        ) {
+
+          value +=
+            row * 7
+
+        }
+
+        else {
+
+          value +=
+            (7 - row) * 7
+
+        }
+
+      }
+
+
+      // ==========================
+      // السيطرة على الوسط
+      // ==========================
+
+      if (
+        row >= 2 &&
+        row <= 5 &&
+        col >= 2 &&
+        col <= 5
+      ) {
+
+        value += 10
+
+      }
+
+
+      // ==========================
+      // الحافة
+      // ==========================
+
+      if (
+        col === 0 ||
+        col === 7
+      ) {
+
+        value += 5
+
+      }
+
+
+      // ==========================
+      // إضافة / خصم النقاط
+      // ==========================
+
+      if (
+        piece.color ===
+        'black'
+      ) {
+
+        score += value
+
+      }
+
+      else {
+
+        score -= value
+
+      }
+
+    }
+
+  }
+
+
+  // ==========================
+  // عدد الحركات المتاحة
+  // ==========================
+
+  const blackMobility =
+    getAIMoves(
+      board,
+      'black'
+    ).length
+
+
+  const creamMobility =
+    getAIMoves(
+      board,
+      'cream'
+    ).length
+
+
+  score +=
+    blackMobility * 3
+
+
+  score -=
+    creamMobility * 3
+
+
+  return score
+}
+
+// ========================================
+// تنفيذ حركة الكمبيوتر
+// ========================================
+
+function executeComputerMove(move) {
+  if (!move) {
+    endComputerTurn()
+    return
+  }
+
+  const piece = move.piece
+
+  if (
+    !piece ||
+    !document.body.contains(piece)
+  ) {
+    endComputerTurn()
+    return
+  }
+
+  // هل كان ملك قبل الحركة؟
+  const wasKing =
+    piece.dataset.king === 'true'
+
+  // ========================================
+  // حذف الحجر المأكول
+  // ========================================
+
+  if (move.capture) {
+    const capturedPiece =
+      getPieceAt(
+        move.capturedRow,
+        move.capturedCol
+      )
+
+    if (capturedPiece) {
+      capturedPiece.remove()
+    }
+  }
+
+  // ========================================
+  // تحديد خانة الوصول
+  // ========================================
+
+  const target =
+    getSquare(
+      move.row,
+      move.col
+    )
+
+  if (!target) {
+    endComputerTurn()
+    return
+  }
+
+  // ========================================
+  // تحريك الحجر الأسود
+  // ========================================
+
+  target.appendChild(piece)
+
+  // ========================================
+  // الترقية إلى ملك
+  // ========================================
+
+  promoteIfNeeded(piece)
+
+  const isKingNow =
+    piece.dataset.king === 'true'
+
+  const justBecameKing =
+    !wasKing && isKingNow
+
+  // ========================================
+  // فحص نهاية اللعبة
+  // ========================================
+
+  if (checkGameStatus()) {
+    return
+  }
+
+  // ========================================
+  // إذا صار ملك الآن
+  // ينتهي دوره فورًا
+  // حتى لو عنده أكلة جديدة
+  // ========================================
+
+  if (justBecameKing) {
+    endComputerTurn()
+    return
+  }
+
+  // ========================================
+  // الأكل المتعدد
+  // إذا كان ملك من قبل أو حجر عادي
+  // ولم يترقَّ الآن
+  // ========================================
+
+  if (move.capture) {
+    const moreCaptures =
+      getCaptureMoves(piece)
+
+    if (
+      moreCaptures.length > 0
+    ) {
+      setTurnText(
+        'الكمبيوتر يكمل الأكل...'
+      )
+
+      setTimeout(() => {
+        const possibleMoves =
+          moreCaptures.map(
+            (nextMove) => ({
+              piece,
+              ...nextMove
+            })
+          )
+
+        const nextMove =
+          chooseComputerMove(
+            possibleMoves
+          )
+
+        executeComputerMove(
+          nextMove
+        )
+      }, 500)
+
+      return
+    }
+  }
+
+  // ========================================
+  // انتهى دور الكمبيوتر
+  // ========================================
+
+  endComputerTurn()
+}
+
+// ========================================
+// نهاية دور الكمبيوتر
+// ========================================
+
+function endComputerTurn() {
+  if (gameOver) return
+
+  currentTurn = 'cream'
+
+  selectedPiece = null
+
+  clearHighlights()
+
+  updatePlayerHighlight()
+
+  if (
+    getAllMoves('cream').length === 0
+  ) {
+    finishGame(
+      'انتهت اللعبة — لا توجد لديك حركة متاحة'
+    )
+
+    return
+  }
+
+  setTurnText('دورك')
+}
+
+// ========================================
+// ترقية الحجر
+// ========================================
+
+function promoteIfNeeded(piece) {
+  if (
+    piece.dataset.king === 'true'
+  ) {
+    return
+  }
+
+  const row = Number(
+    piece.parentElement.dataset.row
+  )
+
+  if (
+    piece.dataset.color === 'cream' &&
+    row === 0
+  ) {
+    makeKing(piece)
+  }
+
+  if (
+    piece.dataset.color === 'black' &&
+    row === 7
+  ) {
+    makeKing(piece)
+  }
+}
+
+// ========================================
+// الملك
+// ========================================
+
+function makeKing(piece) {
+  piece.dataset.king = 'true'
+
+  piece.classList.add('king')
+
+  const symbol =
+    document.createElement('span')
+
+  symbol.classList.add(
+    'king-symbol'
+  )
+
+  symbol.textContent = '♛'
+
+  piece.appendChild(symbol)
+}
+
+// ========================================
+// تغيير نص الدور
+// ========================================
+
+function setTurnText(text) {
+  const element =
+    document.querySelector(
+      '#turnText'
+    )
+
+  if (element) {
+    element.textContent = text
+  }
+}
+
+// ========================================
+// إبراز اللاعب الحالي
+// ========================================
+
+function updatePlayerHighlight() {
+  const human =
+    document.querySelector(
+      '#humanPlayer'
+    )
+
+  const computer =
+    document.querySelector(
+      '#computerPlayer'
+    )
+
+  if (!human || !computer) {
+    return
+  }
+
+  if (onlineMode) {
+    human.classList.toggle(
+      'active-player',
+      currentTurn === onlinePlayerColor
+    )
+
+    computer.classList.toggle(
+      'active-player',
+      currentTurn !== onlinePlayerColor
+    )
+
+    return
+  }
+
+  human.classList.toggle(
+    'active-player',
+    currentTurn === 'cream'
+  )
+
+  computer.classList.toggle(
+    'active-player',
+    currentTurn === 'black'
+  )
+}
+
+// ========================================
+// إزالة علامات الحركة
+// ========================================
+
+function clearHighlights(
+  removeSelected = true
+) {
+  if (removeSelected) {
+    document
+      .querySelectorAll(
+        '.selected-piece'
+      )
+      .forEach((piece) => {
+        piece.classList.remove(
+          'selected-piece'
+        )
+      })
+  }
+
+  document
+    .querySelectorAll(
+      '.possible-move'
+    )
+    .forEach((square) => {
+      square.classList.remove(
+        'possible-move',
+        'capture-move'
+      )
+
+      delete square.dataset.capture
+      delete square.dataset.capturedRow
+      delete square.dataset.capturedCol
+    })
+}
+
+// ========================================
+// إلغاء التحديد
+// ========================================
+
+function clearSelection() {
+  clearHighlights()
+
+  selectedPiece = null
+}
+
+// ========================================
+// فحص الفوز
+// ========================================
+
+function checkGameStatus() {
+  const creamCount =
+    document.querySelectorAll(
+      '.checker-piece[data-color="cream"]'
+    ).length
+
+  const blackCount =
+    document.querySelectorAll(
+      '.checker-piece[data-color="black"]'
+    ).length
+
+  if (onlineMode) {
+    const localCount =
+      onlinePlayerColor === 'cream'
+        ? creamCount
+        : blackCount
+
+    const opponentCount =
+      onlinePlayerColor === 'cream'
+        ? blackCount
+        : creamCount
+
+    if (opponentCount === 0) {
+      finishGame('فزت! 👑')
+      return true
+    }
+
+    if (localCount === 0) {
+      finishGame('خسرت المباراة')
+      return true
+    }
+
+    if (
+      onlineOpponentConnected &&
+      getAllMoves(currentTurn).length === 0
+    ) {
+      const winnerColor =
+        getOppositeColor(currentTurn)
+
+      if (winnerColor === onlinePlayerColor) {
+        finishGame(
+          'فزت! خصمك لا يملك أي حركة 👑'
+        )
+      }
+
+      else {
+        finishGame(
+          'خسرت! لا توجد لديك حركة متاحة'
+        )
+      }
+
+      return true
+    }
+
+    return false
+  }
+
+  if (blackCount === 0) {
+    finishGame('فزت! 👑')
+    return true
+  }
+
+  if (creamCount === 0) {
+    finishGame(
+      'فاز الكمبيوتر'
+    )
+
+    return true
+  }
+
+  return false
+}
+
+// ========================================
+// إنهاء اللعبة
+// ========================================
+
+function finishGame(message) {
+  if (gameOver) return
+
+  gameOver = true
+
+  stopImpossibleWorker()
+  clearSelection()
+  setTurnText(message)
+
+  const playerWon =
+    message.includes('فزت') ||
+    message.includes('فوز')
+
+  recordGameResult(playerWon)
+
+  const winChance =
+    calculatePlayerWinChance()
+
+  const overlay =
+    document.createElement('div')
+
+  overlay.className =
+    'game-result-overlay'
+
+  const box =
+    document.createElement('div')
+
+  box.className =
+    'game-result-box'
+
+  const title =
+    document.createElement('h1')
+
+  title.className = playerWon
+    ? 'result-title win'
+    : 'result-title lose'
+
+  title.textContent = playerWon
+    ? '👑 مبروك الانتصار!'
+    : '💀 خسرت يا حمار 😂'
+
+  const resultMessage =
+    document.createElement('p')
+
+  resultMessage.className =
+    'result-message'
+
+  if (onlineMode) {
+    resultMessage.textContent = playerWon
+      ? 'قدرت تهزم خصمك!'
+      : 'خصمك فاز هالمرة.'
+  }
+
+  else {
+    resultMessage.textContent = playerWon
+      ? 'قدرت تهزم الكمبيوتر!'
+      : 'الكمبيوتر جلدك هالمرة 😂'
+  }
+
+  const chance =
+    document.createElement('div')
+
+  chance.className = 'win-chance'
+
+  chance.innerHTML = `
+    <span>احتمالية فوزك</span>
+    <strong>${winChance}%</strong>
+  `
+
+  const buttons =
+    document.createElement('div')
+
+  buttons.className =
+    'result-buttons'
+
+  const replayButton =
+    document.createElement('button')
+
+  replayButton.className =
+    'result-btn replay-btn'
+
+  replayButton.textContent = onlineMode
+    ? '🔄 مباراة جديدة'
+    : playerWon
+      ? '🔥 العب مرة ثانية'
+      : '💪 حاول مرة ثانية'
+
+  replayButton.onclick = () => {
+    if (onlineMode) {
+      if (!onlineOpponentConnected) {
+        overlay.remove()
+        showHome()
+        return
+      }
+
+      replayButton.disabled = true
+      replayButton.textContent =
+        'بانتظار إعادة المباراة...'
+
+      socket.emit('restart-game')
+      return
+    }
+
+    overlay.remove()
+    startGame(currentLevel)
+  }
+
+  const homeButton =
+    document.createElement('button')
+
+  homeButton.className =
+    'result-btn home-btn'
+
+  homeButton.textContent =
+    '🏠 الرئيسية'
+
+  homeButton.onclick = () => {
+    overlay.remove()
+    showHome()
+  }
+
+  buttons.appendChild(replayButton)
+  buttons.appendChild(homeButton)
+
+  box.appendChild(title)
+  box.appendChild(resultMessage)
+  box.appendChild(chance)
+  box.appendChild(buttons)
+
+  overlay.appendChild(box)
+
+  document.body.appendChild(overlay)
+}
+
+
+// ========================================
+// حساب احتمالية فوز اللاعب
+// ========================================
+
+function calculatePlayerWinChance() {
+  const creamPieces =
+    document.querySelectorAll(
+      '.checker-piece[data-color="cream"]'
+    )
+
+  const blackPieces =
+    document.querySelectorAll(
+      '.checker-piece[data-color="black"]'
+    )
+
+  let creamScore = 0
+  let blackScore = 0
+
+  creamPieces.forEach(piece => {
+    creamScore +=
+      piece.dataset.king === 'true'
+        ? 3
+        : 1
+  })
+
+  blackPieces.forEach(piece => {
+    blackScore +=
+      piece.dataset.king === 'true'
+        ? 3
+        : 1
+  })
+
+  let playerScore = creamScore
+  let opponentScore = blackScore
+  let playerCount = creamPieces.length
+  let opponentCount = blackPieces.length
+
+  if (
+    onlineMode &&
+    onlinePlayerColor === 'black'
+  ) {
+    playerScore = blackScore
+    opponentScore = creamScore
+    playerCount = blackPieces.length
+    opponentCount = creamPieces.length
+  }
+
+  const total =
+    playerScore + opponentScore
+
+  if (total === 0) {
+    return 50
+  }
+
+  let chance =
+    Math.round(
+      (playerScore / total) * 100
+    )
+
+  chance = Math.max(
+    1,
+    Math.min(99, chance)
+  )
+
+  if (opponentCount === 0) {
+    chance = 100
+  }
+
+  if (playerCount === 0) {
+    chance = 0
+  }
+
+  return chance
+}
+
+// ========================================
+// تشغيل الموقع
+// ========================================
+
+showHome()

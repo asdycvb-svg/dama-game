@@ -1,0 +1,2266 @@
+/* =========================
+   إعدادات عامة
+========================= */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+
+  font-family:
+    Arial,
+    sans-serif;
+
+  background: #0d0d0d;
+
+  color: #f3e9d2;
+}
+
+button {
+  font-family: inherit;
+}
+
+
+/* =========================
+   الصفحة الرئيسية
+========================= */
+
+.home {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  text-align: center;
+
+  padding: 20px;
+}
+
+
+/* =========================
+   الشعار
+========================= */
+
+.logo {
+  margin-bottom: 22px;
+}
+
+.mini-board {
+  position: relative;
+
+  width: 90px;
+  height: 90px;
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, 1fr);
+
+  overflow: hidden;
+
+  border-radius: 14px;
+
+  border:
+    3px solid #f3e9d2;
+
+  transform:
+    rotate(-8deg);
+
+  box-shadow:
+    0 12px 35px
+    rgba(0, 0, 0, 0.6);
+}
+
+.mini-board span {
+  background: #f3e9d2;
+}
+
+.mini-board span:nth-child(2),
+.mini-board span:nth-child(4),
+.mini-board span:nth-child(5),
+.mini-board span:nth-child(7),
+.mini-board span:nth-child(10),
+.mini-board span:nth-child(12),
+.mini-board span:nth-child(13),
+.mini-board span:nth-child(15) {
+  background: #222222;
+}
+
+.logo-piece {
+  position: absolute;
+
+  width: 27px;
+  height: 27px;
+
+  border-radius: 50%;
+
+  box-shadow:
+    0 3px 7px
+    rgba(0, 0, 0, 0.5);
+}
+
+.piece-cream {
+  background: #f3e9d2;
+
+  border:
+    3px solid #cfc2a4;
+
+  top: 13px;
+  right: 13px;
+}
+
+.piece-black {
+  background: #111111;
+
+  border:
+    3px solid #f3e9d2;
+
+  bottom: 13px;
+  left: 13px;
+}
+
+
+/* =========================
+   عنوان الرئيسية
+========================= */
+
+h1 {
+  font-size: 58px;
+
+  margin:
+    0 0 8px;
+
+  font-weight: 800;
+
+  color: #f3e9d2;
+}
+
+.subtitle {
+  color: #9c978c;
+
+  margin:
+    0 0 38px;
+
+  font-size: 16px;
+}
+
+
+/* =========================
+   قائمة الرئيسية
+========================= */
+
+.menu {
+  width: 320px;
+
+  max-width: 100%;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 12px;
+}
+
+button {
+  padding: 17px;
+
+  border-radius: 10px;
+
+  font-size: 18px;
+
+  font-weight: bold;
+
+  cursor: pointer;
+
+  transition:
+    0.2s ease;
+}
+
+.primary-btn {
+  background: #f3e9d2;
+
+  color: #111111;
+
+  border:
+    2px solid #f3e9d2;
+}
+
+.primary-btn:hover {
+  background: #e5d8ba;
+
+  border-color: #e5d8ba;
+
+  transform:
+    translateY(-2px);
+}
+
+.secondary-btn {
+  background: #171717;
+
+  color: #f3e9d2;
+
+  border:
+    1px solid #3a3833;
+}
+
+.secondary-btn:hover {
+  background: #24231f;
+
+  border-color: #686154;
+
+  transform:
+    translateY(-2px);
+}
+
+.footer {
+  position: absolute;
+
+  bottom: 20px;
+
+  color: #5f5a50;
+
+  font-size: 11px;
+
+  letter-spacing: 4px;
+}
+
+
+/* =========================
+   نافذة لعبة جديدة
+========================= */
+
+.modal {
+  position: fixed;
+
+  inset: 0;
+
+  background:
+    rgba(0, 0, 0, 0.75);
+
+  display: flex;
+
+  justify-content: center;
+  align-items: center;
+
+  opacity: 0;
+
+  visibility: hidden;
+
+  transition:
+    0.2s ease;
+
+  padding: 20px;
+
+  z-index: 100;
+}
+
+.modal.show {
+  opacity: 1;
+
+  visibility: visible;
+}
+
+.modal-box {
+  position: relative;
+
+  width: 430px;
+
+  max-width: 100%;
+
+  background: #151515;
+
+  border:
+    1px solid #35322d;
+
+  border-radius: 18px;
+
+  padding:
+    35px 28px 28px;
+
+  text-align: center;
+
+  box-shadow:
+    0 25px 70px
+    rgba(0, 0, 0, 0.7);
+}
+
+.modal-box h2 {
+  color: #f3e9d2;
+
+  font-size: 28px;
+
+  margin:
+    0 0 8px;
+}
+
+.modal-description {
+  color: #8f8a80;
+
+  margin:
+    0 0 25px;
+}
+
+
+/* =========================
+   زر إغلاق النافذة
+========================= */
+
+.close-btn {
+  position: absolute;
+
+  top: 12px;
+  right: 15px;
+
+  width: 38px;
+  height: 38px;
+
+  padding: 0;
+
+  border: none;
+
+  background: transparent;
+
+  color: #777;
+
+  font-size: 30px;
+
+  cursor: pointer;
+}
+
+.close-btn:hover {
+  color: #f3e9d2;
+}
+
+
+/* =========================
+   خيارات اللعب
+========================= */
+
+.game-options {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 12px;
+}
+
+.game-option {
+  width: 100%;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 18px;
+
+  text-align: right;
+
+  background: #1c1c1c;
+
+  border:
+    1px solid #33312c;
+
+  color: #f3e9d2;
+
+  padding: 18px;
+
+  border-radius: 12px;
+
+  transition:
+    0.2s ease;
+}
+
+.game-option:hover {
+  background: #25231f;
+
+  border-color: #706858;
+
+  transform:
+    translateY(-2px);
+}
+
+.option-icon {
+  width: 55px;
+  height: 55px;
+
+  display: flex;
+
+  justify-content: center;
+  align-items: center;
+
+  flex-shrink: 0;
+
+  background: #f3e9d2;
+
+  color: #111;
+
+  border-radius: 12px;
+
+  font-size: 24px;
+}
+
+.option-text {
+  display: flex;
+
+  flex-direction: column;
+
+  flex: 1;
+}
+
+.option-text strong {
+  font-size: 17px;
+
+  margin-bottom: 5px;
+}
+
+.option-text small {
+  color: #8f8a80;
+
+  font-size: 12px;
+
+  line-height: 1.5;
+}
+
+
+/* =========================
+   مستويات الصعوبة
+========================= */
+
+.difficulty-options {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 12px;
+}
+
+.difficulty-btn {
+  width: 100%;
+
+  padding:
+    18px 20px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-start;
+
+  background: #1c1c1c;
+
+  color: #f3e9d2;
+
+  border:
+    1px solid #33312c;
+
+  border-radius: 12px;
+
+  text-align: right;
+
+  transition:
+    0.2s ease;
+}
+
+.difficulty-btn:hover {
+  background: #25231f;
+
+  border-color: #706858;
+
+  transform:
+    translateY(-2px);
+}
+
+.difficulty-title {
+  width: 100%;
+
+  font-size: 18px;
+
+  font-weight: bold;
+
+  text-align: right;
+
+  margin-bottom: 5px;
+}
+
+.difficulty-description {
+  width: 100%;
+
+  color: #8f8a80;
+
+  font-size: 12px;
+
+  text-align: right;
+}
+
+.back-btn {
+  position: absolute;
+
+  top: 12px;
+  right: 15px;
+
+  width: 40px;
+  height: 40px;
+
+  padding: 0;
+
+  background: transparent;
+
+  border: none;
+
+  color: #8f8a80;
+
+  font-size: 25px;
+
+  cursor: pointer;
+}
+
+.back-btn:hover {
+  color: #f3e9d2;
+}
+
+
+/* =========================
+   صفحة اللعب
+========================= */
+
+.game-page {
+  min-height: 100vh;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  padding:
+    30px 20px 50px;
+
+  background: #0d0d0d;
+}
+
+.game-header {
+  width: 600px;
+
+  max-width: 100%;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content:
+    space-between;
+
+  margin-bottom: 20px;
+}
+
+.game-info {
+  text-align: right;
+}
+
+.game-info h2 {
+  margin: 0;
+
+  color: #f3e9d2;
+
+  font-size: 25px;
+}
+
+.game-info p {
+  margin:
+    5px 0 0;
+
+  color: #77736b;
+
+  font-size: 13px;
+}
+
+.exit-game-btn {
+  background: #171717;
+
+  color: #aaa59a;
+
+  border:
+    1px solid #33312c;
+
+  padding:
+    10px 20px;
+
+  font-size: 14px;
+}
+
+.exit-game-btn:hover {
+  background: #24231f;
+
+  color: #f3e9d2;
+}
+
+
+/* =========================
+   مؤشر الدور
+========================= */
+
+.turn-box {
+  display: flex;
+
+  align-items: center;
+
+  gap: 9px;
+
+  margin-bottom: 15px;
+
+  color: #f3e9d2;
+
+  font-size: 14px;
+}
+
+.turn-piece {
+  width: 17px;
+  height: 17px;
+
+  border-radius: 50%;
+}
+
+.cream-turn {
+  background: #f3e9d2;
+
+  border:
+    2px solid #cfc2a4;
+}
+
+
+/* =========================
+   رقعة الدامة
+========================= */
+
+.board {
+  width:
+    min(600px, 90vw);
+
+  aspect-ratio:
+    1 / 1;
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(8, 1fr);
+
+  grid-template-rows:
+    repeat(8, 1fr);
+
+  border:
+    5px solid #292723;
+
+  border-radius: 8px;
+
+  overflow: hidden;
+
+  box-shadow:
+    0 20px 60px
+      rgba(0, 0, 0, 0.65),
+    0 0 0 1px
+      #484238;
+}
+
+.square {
+  position: relative;
+
+  display: flex;
+
+  justify-content: center;
+
+  align-items: center;
+}
+
+.light-square {
+  background: #e8dcc2;
+}
+
+.dark-square {
+  background: #403d37;
+}
+
+
+/* =========================
+   أحجار الدامة
+========================= */
+
+.checker-piece {
+  width: 72%;
+  height: 72%;
+
+  border-radius: 50%;
+
+  position: relative;
+
+  z-index: 2;
+
+  box-shadow:
+    0 5px 8px
+      rgba(0, 0, 0, 0.45),
+    inset 0 -5px 5px
+      rgba(0, 0, 0, 0.18);
+
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.checker-piece::after {
+  content: '';
+
+  position: absolute;
+
+  width: 65%;
+  height: 65%;
+
+  top: 50%;
+  left: 50%;
+
+  transform:
+    translate(-50%, -50%);
+
+  border-radius: 50%;
+
+  border:
+    2px solid
+    rgba(128, 128, 128, 0.25);
+}
+
+.cream-checker {
+  background: #f3e9d2;
+
+  border:
+    3px solid #cfc2a4;
+
+  cursor: pointer;
+}
+
+.black-checker {
+  background: #151515;
+
+  border:
+    3px solid #292929;
+}
+
+.cream-checker:hover {
+  transform:
+    scale(1.05);
+}
+
+
+/* =========================
+   الحجر المحدد
+========================= */
+
+.selected-piece {
+  transform:
+    scale(1.08);
+
+  box-shadow:
+    0 0 0 4px
+      rgba(243, 233, 210, 0.4),
+    0 7px 18px
+      rgba(0, 0, 0, 0.7);
+}
+
+
+/* =========================
+   الحركة المتاحة
+========================= */
+
+.possible-move {
+  cursor: pointer;
+}
+
+.possible-move::after {
+  content: '';
+
+  position: absolute;
+
+  width: 22%;
+  height: 22%;
+
+  top: 50%;
+  left: 50%;
+
+  transform:
+    translate(-50%, -50%);
+
+  border-radius: 50%;
+
+  background: #f3e9d2;
+
+  opacity: 0.8;
+
+  box-shadow:
+    0 0 15px
+    rgba(243, 233, 210, 0.55);
+
+  z-index: 1;
+
+  pointer-events: none;
+}
+
+.possible-move:hover::after {
+  width: 30%;
+  height: 30%;
+
+  opacity: 1;
+}
+
+
+/* =========================
+   معلومات اللاعبين
+========================= */
+
+.players {
+  width: 600px;
+
+  max-width: 100%;
+
+  display: flex;
+
+  justify-content:
+    space-between;
+
+  align-items: center;
+
+  margin-top: 22px;
+}
+
+.player {
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  color: #77736b;
+
+  padding:
+    10px 14px;
+
+  border-radius: 10px;
+}
+
+.active-player {
+  color: #f3e9d2;
+
+  background: #181816;
+}
+
+.player div {
+  display: flex;
+
+  flex-direction: column;
+
+  text-align: right;
+}
+
+.player strong {
+  font-size: 14px;
+}
+
+.player small {
+  margin-top: 3px;
+
+  color: #77736b;
+
+  font-size: 11px;
+}
+
+.player-piece {
+  width: 28px;
+  height: 28px;
+
+  border-radius: 50%;
+}
+
+.cream-player {
+  background: #f3e9d2;
+
+  border:
+    3px solid #cfc2a4;
+}
+
+.black-player {
+  background: #151515;
+
+  border:
+    3px solid #3a3a3a;
+}
+
+.vs {
+  color: #57534b;
+
+  font-size: 12px;
+
+  font-weight: bold;
+}
+
+
+/* =========================
+   الجوال
+========================= */
+
+@media (max-width: 650px) {
+
+  .game-page {
+    padding:
+      20px 12px 40px;
+  }
+
+  .board {
+    width: 94vw;
+  }
+
+  .players {
+    width: 94vw;
+  }
+
+  .game-header {
+    width: 94vw;
+  }
+
+  h1 {
+    font-size: 48px;
+  }
+
+}
+/* =========================
+   حركة الأكل
+========================= */
+
+.capture-move::after {
+  width: 28%;
+  height: 28%;
+
+  background: #f3e9d2;
+
+  box-shadow:
+    0 0 0 5px rgba(243, 233, 210, 0.18),
+    0 0 18px rgba(243, 233, 210, 0.75);
+}
+
+
+/* =========================
+   الملك
+========================= */
+
+.king {
+  display: flex;
+
+  justify-content: center;
+  align-items: center;
+}
+
+.king-symbol {
+  position: relative;
+
+  z-index: 5;
+
+  font-size: clamp(18px, 3vw, 32px);
+
+  line-height: 1;
+
+  pointer-events: none;
+}
+
+.cream-checker .king-symbol {
+  color: #171717;
+}
+
+.black-checker .king-symbol {
+  color: #f3e9d2;
+}
+/* ========================================
+   شاشة نهاية المباراة
+   ======================================== */
+
+.game-result-overlay {
+  position: fixed;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background: rgba(0, 0, 0, 0.72);
+
+  z-index: 9999;
+
+  animation: resultFadeIn 0.25s ease;
+}
+
+
+/* ========================================
+   صندوق النتيجة
+   ======================================== */
+
+.game-result-box {
+  width: min(430px, 100%);
+
+  padding: 36px 28px;
+
+  text-align: center;
+
+  background: #f4efe3;
+
+  border: 1px solid rgba(255, 255, 255, 0.25);
+
+  border-radius: 24px;
+
+  box-shadow:
+    0 25px 70px rgba(0, 0, 0, 0.45);
+
+  animation: resultPop 0.3s ease;
+}
+
+
+/* ========================================
+   العنوان
+   ======================================== */
+
+.result-title {
+  margin: 0 0 12px;
+
+  font-size: 32px;
+
+  font-weight: 800;
+}
+
+.result-title.win {
+  color: #25251f;
+}
+
+.result-title.lose {
+  color: #25251f;
+}
+
+
+/* ========================================
+   الرسالة
+   ======================================== */
+
+.result-message {
+  margin: 0 0 25px;
+
+  color: #68645b;
+
+  font-size: 17px;
+
+  line-height: 1.6;
+}
+
+
+/* ========================================
+   احتمالية الفوز
+   ======================================== */
+
+.win-chance {
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  margin: 20px auto 28px;
+
+  padding: 20px;
+
+  width: 170px;
+
+  min-height: 120px;
+
+  border-radius: 20px;
+
+  background: #ebe4d5;
+
+  border: 1px solid #d8cfbd;
+}
+
+.win-chance span {
+  margin-bottom: 6px;
+
+  color: #777164;
+
+  font-size: 14px;
+}
+
+.win-chance strong {
+  color: #22221e;
+
+  font-size: 38px;
+
+  font-weight: 900;
+}
+
+
+/* ========================================
+   الأزرار
+   ======================================== */
+
+.result-buttons {
+  display: flex;
+
+  gap: 12px;
+
+  justify-content: center;
+
+  flex-wrap: wrap;
+}
+
+.result-btn {
+  min-width: 155px;
+
+  padding: 13px 20px;
+
+  border: none;
+
+  border-radius: 13px;
+
+  font-size: 15px;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.result-btn:hover {
+  transform: translateY(-2px);
+}
+
+.result-btn:active {
+  transform: translateY(0);
+}
+
+.replay-btn {
+  background: #22221e;
+
+  color: #f4efe3;
+}
+
+.home-btn {
+  background: #ddd5c4;
+
+  color: #292821;
+}
+
+
+/* ========================================
+   الحركات
+   ======================================== */
+
+@keyframes resultFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes resultPop {
+  from {
+    opacity: 0;
+
+    transform:
+      scale(0.92)
+      translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+
+    transform:
+      scale(1)
+      translateY(0);
+  }
+}
+
+
+/* ========================================
+   الجوال
+   ======================================== */
+
+@media (max-width: 500px) {
+  .game-result-box {
+    padding: 30px 20px;
+
+    border-radius: 20px;
+  }
+
+  .result-title {
+    font-size: 27px;
+  }
+
+  .result-buttons {
+    flex-direction: column;
+  }
+
+  .result-btn {
+    width: 100%;
+  }
+}
+/* ========================================
+   👤 الملف الشخصي
+   ======================================== */
+
+[hidden] {
+  display: none !important;
+}
+
+
+/* ========================================
+   زر الحساب أعلى اليمين
+   ======================================== */
+
+.profile-top-btn {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  padding: 10px 15px;
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+
+  background: rgba(255, 255, 255, 0.06);
+
+  color: #f4efe3;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.profile-top-btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+
+  border-color: rgba(255, 255, 255, 0.22);
+
+  transform: translateY(-2px);
+}
+
+.profile-top-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 30px;
+  height: 30px;
+
+  border-radius: 50%;
+
+  background: #f4efe3;
+
+  color: #22221e;
+
+  font-size: 16px;
+}
+
+
+/* ========================================
+   صفحة الملف الشخصي
+   ======================================== */
+
+.profile-view {
+  width: min(760px, calc(100% - 30px));
+
+  margin: 80px auto 40px;
+
+  padding: 30px;
+
+  background: #f4efe3;
+
+  border-radius: 26px;
+
+  color: #23231f;
+
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.35);
+}
+
+
+/* ========================================
+   رأس الملف الشخصي
+   ======================================== */
+
+.profile-page-header {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+
+  padding-bottom: 24px;
+
+  border-bottom: 1px solid #d9d1c1;
+}
+
+.profile-page-header h2 {
+  margin: 10px 0 4px;
+
+  font-size: 27px;
+
+  color: #23231f;
+}
+
+.profile-page-header p {
+  margin: 0;
+
+  color: #777165;
+
+  font-size: 14px;
+}
+
+.profile-big-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 76px;
+  height: 76px;
+
+  margin: 0 auto;
+
+  border-radius: 22px;
+
+  background: #25251f;
+
+  color: #f4efe3;
+
+  font-size: 34px;
+
+  box-shadow:
+    0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+
+/* ========================================
+   زر الرجوع
+   ======================================== */
+
+.profile-back-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+
+  padding: 10px 15px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: #e4ddcf;
+
+  color: #292821;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.profile-back-btn:hover {
+  background: #d7cebd;
+
+  transform: translateX(-2px);
+}
+
+
+/* ========================================
+   الأقسام
+   ======================================== */
+
+.profile-section {
+  margin-top: 24px;
+
+  padding: 22px;
+
+  border: 1px solid #ddd5c5;
+
+  border-radius: 18px;
+
+  background: #eee8dc;
+}
+
+.profile-section h3 {
+  margin: 0 0 17px;
+
+  font-size: 17px;
+
+  color: #292821;
+}
+
+
+/* ========================================
+   تعديل الاسم
+   ======================================== */
+
+.profile-name-editor {
+  display: flex;
+
+  gap: 10px;
+}
+
+.profile-name-editor input {
+  flex: 1;
+
+  min-width: 0;
+
+  padding: 13px 14px;
+
+  border: 1px solid #cec5b3;
+
+  border-radius: 12px;
+
+  outline: none;
+
+  background: #f8f4eb;
+
+  color: #25251f;
+
+  font-family: inherit;
+
+  font-size: 15px;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.profile-name-editor input:focus {
+  border-color: #292821;
+
+  box-shadow:
+    0 0 0 3px rgba(41, 40, 33, 0.08);
+}
+
+.profile-save-btn {
+  padding: 12px 18px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: #24241f;
+
+  color: #f5f0e5;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+  white-space: nowrap;
+}
+
+.profile-save-btn:hover {
+  opacity: 0.88;
+}
+
+.profile-save-message {
+  min-height: 20px;
+
+  margin: 9px 2px 0;
+
+  color: #686257;
+
+  font-size: 13px;
+}
+
+
+/* ========================================
+   بطاقات الإحصائيات
+   ======================================== */
+
+.profile-stats-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+.profile-stat-card {
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  min-height: 105px;
+
+  padding: 15px 10px;
+
+  border-radius: 15px;
+
+  background: #f7f2e8;
+
+  border: 1px solid #ded6c7;
+}
+
+.profile-stat-card span {
+  margin-bottom: 7px;
+
+  color: #777064;
+
+  font-size: 13px;
+}
+
+.profile-stat-card strong {
+  color: #25251f;
+
+  font-size: 27px;
+  font-weight: 900;
+}
+
+
+/* ========================================
+   إحصائيات المستويات
+   ======================================== */
+
+.level-stats-list {
+  display: flex;
+  flex-direction: column;
+
+  gap: 10px;
+}
+
+.level-stat-row {
+  display: flex;
+
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 15px;
+
+  padding: 15px 16px;
+
+  border-radius: 14px;
+
+  background: #f7f2e8;
+
+  border: 1px solid #ded6c7;
+}
+
+.level-stat-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.level-stat-row strong {
+  font-size: 15px;
+
+  color: #292821;
+}
+
+.level-stat-row small {
+  color: #817a6d;
+
+  font-size: 12px;
+}
+
+.level-results {
+  display: flex;
+
+  gap: 8px;
+
+  flex-wrap: wrap;
+
+  justify-content: flex-end;
+}
+
+.level-results span {
+  padding: 6px 10px;
+
+  border-radius: 9px;
+
+  background: #e7e0d3;
+
+  color: #444138;
+
+  font-size: 12px;
+
+  font-weight: 700;
+}
+
+
+/* مستوى أتحداك تفوز */
+
+.impossible-row {
+  background: #292924;
+
+  border-color: #292924;
+}
+
+.impossible-row strong {
+  color: #f4efe3;
+}
+
+.impossible-row small {
+  color: #aaa495;
+}
+
+.impossible-row .level-results span {
+  background: rgba(255, 255, 255, 0.09);
+
+  color: #f4efe3;
+}
+
+
+/* ========================================
+   سجل المباريات
+   ======================================== */
+
+#gameHistory {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 9px;
+}
+
+.history-game-item {
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  padding: 13px 15px;
+
+  border: 1px solid #ddd5c5;
+
+  border-radius: 13px;
+
+  background: #f7f2e8;
+}
+
+.history-result {
+  min-width: 68px;
+
+  padding: 7px 10px;
+
+  text-align: center;
+
+  border-radius: 9px;
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.history-win {
+  background: #24241f;
+
+  color: #f5f0e5;
+}
+
+.history-loss {
+  background: #d7d0c2;
+
+  color: #332f29;
+}
+
+.history-game-info {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+
+  min-width: 0;
+}
+
+.history-game-info strong {
+  color: #292821;
+
+  font-size: 14px;
+}
+
+.history-game-info small {
+  color: #7d766a;
+
+  font-size: 11px;
+}
+
+.empty-history {
+  margin: 0;
+
+  padding: 20px;
+
+  text-align: center;
+
+  border-radius: 13px;
+
+  background: #f7f2e8;
+
+  color: #817a6f;
+
+  font-size: 14px;
+}
+
+
+/* ========================================
+   الجوال
+   ======================================== */
+
+@media (max-width: 700px) {
+
+  .profile-top-btn {
+    top: 15px;
+    right: 15px;
+
+    padding: 8px 11px;
+  }
+
+  .profile-view {
+    width:
+      calc(100% - 20px);
+
+    margin-top: 70px;
+
+    padding: 20px;
+
+    border-radius: 20px;
+  }
+
+  .profile-stats-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
+  }
+
+  .profile-page-header {
+    padding-top: 48px;
+  }
+
+  .profile-back-btn {
+    top: 0;
+  }
+
+  .profile-name-editor {
+    flex-direction: column;
+  }
+
+  .profile-save-btn {
+    width: 100%;
+  }
+
+  .level-stat-row {
+    align-items: flex-start;
+
+    flex-direction: column;
+  }
+
+  .level-results {
+    justify-content: flex-start;
+  }
+}
+/* ========================================
+   تعديل هوية الملف الشخصي - بني لامع + كلام أبيض
+   ======================================== */
+
+.profile-top-btn {
+  background: linear-gradient(135deg, #4b2e1f, #6b442a);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.profile-top-btn:hover {
+  background: linear-gradient(135deg, #5a3724, #7a4d30);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.profile-top-icon {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+
+/* الصندوق الرئيسي */
+.profile-view {
+  background:
+    linear-gradient(
+      180deg,
+      #6a4128 0%,
+      #563521 45%,
+      #3c2418 100%
+    );
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+
+/* رأس الملف */
+.profile-page-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.profile-page-header h2 {
+  color: #ffffff;
+}
+
+.profile-page-header p {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.profile-big-avatar {
+  background:
+    linear-gradient(
+      180deg,
+      #8a5736 0%,
+      #5a341f 100%
+    );
+  color: #ffffff;
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.profile-back-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.profile-back-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+
+/* أقسام الملف */
+.profile-section {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.profile-section h3 {
+  color: #ffffff;
+}
+
+
+/* الاسم */
+.profile-name-editor input {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.profile-name-editor input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.profile-name-editor input:focus {
+  border-color: rgba(255, 255, 255, 0.34);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.profile-save-btn {
+  background:
+    linear-gradient(
+      180deg,
+      #f7f1e8 0%,
+      #d8c7b0 100%
+    );
+  color: #3a2418;
+  box-shadow:
+    0 6px 15px rgba(0, 0, 0, 0.18);
+}
+
+.profile-save-btn:hover {
+  opacity: 0.95;
+}
+
+.profile-save-message {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+
+/* بطاقات الإحصائيات */
+.profile-stat-card {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.06) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.profile-stat-card span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.profile-stat-card strong {
+  color: #ffffff;
+}
+
+
+/* صفوف المستويات */
+.level-stat-row {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.level-stat-row strong {
+  color: #ffffff;
+}
+
+.level-stat-row small {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.level-results span {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+
+/* مستوى أتحداك تفوز */
+.impossible-row {
+  background:
+    linear-gradient(
+      180deg,
+      #241612 0%,
+      #140c09 100%
+    );
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.impossible-row strong,
+.impossible-row small,
+.impossible-row .level-results span {
+  color: #ffffff;
+}
+
+
+/* سجل المباريات */
+.history-game-item {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.11) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-game-info strong {
+  color: #ffffff;
+}
+
+.history-game-info small {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.history-win {
+  background:
+    linear-gradient(
+      180deg,
+      #f8f1e7 0%,
+      #d9c8b2 100%
+    );
+  color: #42271a;
+}
+
+.history-loss {
+  background:
+    linear-gradient(
+      180deg,
+      #8f5d3c 0%,
+      #6a4128 100%
+    );
+  color: #ffffff;
+}
+
+.empty-history {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* ========================================
+   خط عنوان الدامة + خلفية لوحة شفافة
+   ======================================== */
+
+/* خط عربي أجمل للعنوان */
+@import url('https://fonts.googleapis.com/css2?family=Lalezar&display=swap');
+
+
+.home {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* لوحة دامة شفافة خلف الصفحة */
+/* ========================================
+   خلفية صفحة الرئيسية - لوحة دامة/شطرنج
+   ======================================== */
+
+.home {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-height: 100vh;
+}
+
+/* خلفية مربعات تعبّي الصفحة كلها */
+.home::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  z-index: 0;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      45deg,
+      rgba(244, 239, 227, 0.055) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgba(244, 239, 227, 0.055) 75%,
+      rgba(244, 239, 227, 0.055)
+    ),
+    linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.02) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgba(255, 255, 255, 0.02) 75%,
+      rgba(255, 255, 255, 0.02)
+    );
+
+  background-size: 160px 160px;
+  background-position: 0 0, 80px 80px;
+
+  opacity: 1;
+}
+
+/* كل المحتوى فوق الخلفية */
+.home > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* نخلي المحتوى فوق الخلفية */
+.home > * {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* عنوان الدامة */
+.game-title {
+  font-family: 'Lalezar', cursive;
+
+  font-size: 68px;
+
+  line-height: 1;
+
+  color: #f4efe3;
+
+  letter-spacing: 1px;
+
+  margin: 14px 0 10px;
+
+  text-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.25),
+    0 0 20px rgba(244, 239, 227, 0.06);
+}
+
+
+/* وصف تحت العنوان */
+.subtitle {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* للجوال */
+@media (max-width: 700px) {
+  .home::before {
+    width: 360px;
+    height: 360px;
+
+    transform:
+      translate(-50%, -42%)
+      rotate(-10deg);
+
+    background-size: 84px 84px, 84px 84px;
+    background-position: 0 0, 42px 42px;
+  }
+
+  .game-title {
+    font-size: 52px;
+  }
+}
+.home {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.home::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  background:
+    linear-gradient(
+      rgba(0, 0, 0, 0.45),
+      rgba(0, 0, 0, 0.45)
+    ),
+    url("/public/dama-bg.jpg.jpg");
+
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  z-index: 0;
+  pointer-events: none;
+}
+
+.home > * {
+  position: relative;
+  z-index: 1;
+}
+/* زر الملف الشخصي - يمين وأعرض */
+
+.profile-top-btn {
+  position: absolute !important;
+
+  top: 18px !important;
+  right: 18px !important;
+  left: auto !important;
+
+  min-width: 190px;
+  min-height: 54px;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+
+  gap: 12px;
+
+  padding: 10px 20px;
+
+  border-radius: 16px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(92, 53, 31, 0.96),
+      rgba(55, 31, 20, 0.96)
+    );
+
+  border:
+    1px solid rgba(255, 255, 255, 0.14);
+
+  color: #ffffff;
+
+  font-size: 16px;
+  font-weight: 800;
+
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  z-index: 50;
+}
+
+.profile-top-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 11px;
+
+  background: rgba(255, 255, 255, 0.12);
+
+  font-size: 20px;
+}
+
+#profileButtonName {
+  max-width: 130px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .profile-top-btn {
+    top: 14px !important;
+    right: 14px !important;
+    left: auto !important;
+
+    min-width: 175px;
+    min-height: 52px;
+
+    padding: 8px 16px;
+
+    font-size: 15px;
+  }
+
+  .profile-top-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+}
