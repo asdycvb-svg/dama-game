@@ -220,14 +220,15 @@ socket.on('piece-selected', (data) => {
   if (!onlineMode) return
 
   // حذف أي تحديد أونلاين قديم
-  document.querySelectorAll('.remote-selected-piece')
-    .forEach(p => p.classList.remove('remote-selected-piece'))
+  document.querySelectorAll('.selected-piece')
+.forEach(p => p.classList.remove('selected-piece'))
 
   const piece = getPieceAt(data.row, data.col)
 
   if (piece) {
-    piece.classList.add('remote-selected-piece')
-  }
+    piece.classList.add('selected-piece')
+}
+
 })
 
 socket.on('restart-game', () => {
