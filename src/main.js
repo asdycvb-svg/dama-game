@@ -213,6 +213,8 @@ socket.on('game-move', (move) => {
   if (!onlineMode) return
 
   applyRemoteOnlineMove(move)
+  document.querySelectorAll('.selected-piece')
+.forEach(p => p.classList.remove('selected-piece'));
 })
 
 // إظهار القطعة المحددة عند الطرف الآخر أونلاين
