@@ -212,7 +212,7 @@ socket.on('player-left', () => {
 
   if (!gameOver) {
     finishGame(
-      'فزت! خصمك خرج من المباراة 👑'
+      'فزت! خصمك انسحب من المباراة 👑'
     )
   }
 })
@@ -904,10 +904,10 @@ function recordGameResult(
   lastRatingAfter =
     lastRatingBefore
 
-  if (
-    level === 'online' &&
-    onlineOpponentRating != null
-  ) {
+  if (level === 'online') {
+    // الأونلاين فقط يغيّر التصنيف.
+    // لو انسحب الخصم قبل وصول تصنيفه، نحسبه مؤقتًا
+    // كتقييم قريب من تقييم اللاعب بدل تجاهل النتيجة.
     ratingResult =
       applyOnlineRating(playerWon)
   }
@@ -3525,6 +3525,13 @@ function showOnlineMenu() {
 // ========================================
 
 function createOnlineRoom() {
+  // لو خرج اللاعب من روم سابق فصلنا السوكت عمدًا
+  // حتى يصل إشعار الانسحاب حتى مع نسخة السيرفر القديمة.
+  // نعيد الاتصال تلقائيًا عند إنشاء روم جديد.
+  if (!socket.connected) {
+    socket.connect()
+  }
+
   socket.emit(
     'create-room',
     response => {
@@ -3702,6 +3709,10 @@ function joinOnlineRoom() {
     return
   }
 
+  if (!socket.connected) {
+    socket.connect()
+  }
+
   socket.emit(
     'join-room',
     code,
@@ -3846,6 +3857,16 @@ function startOnlineGame() {
 
   createBoard()
 
+  // كل لاعب يشوف قطعه من أسفل الرقعة.
+  // صاحب الروم حليبي، والمنضم أسود وتنعكس له الرقعة فقط بصريًا.
+  const onlineBoard =
+    document.querySelector('#board')
+
+  onlineBoard?.classList.toggle(
+    'board-flipped',
+    onlinePlayerColor === 'black'
+  )
+
   document
     .querySelector('#exitGameBtn')
     .addEventListener(
@@ -3912,7 +3933,13 @@ function leaveOnlineRoom() {
     onlineMode &&
     onlineRoomCode
   ) {
+    // السيرفر الحديث يتعامل مع leave-room مباشرة.
     socket.emit('leave-room')
+
+    // فصل الاتصال بعد الإرسال يخلي حتى نسخة السيرفر القديمة
+    // ترسل player-left للخصم عن طريق حدث disconnect.
+    // عند إنشاء/دخول روم جديد نعيد الاتصال تلقائيًا.
+    socket.disconnect()
   }
 
   onlineRoomCode = null
@@ -4303,8 +4330,27 @@ function getLevelName(level) {
 
 async function exitCurrentGameAsLoss() {
 
-  // الأونلاين: الخروج ما يحتسب خسارة
+  // الأونلاين: الانسحاب يحتسب خسارة فورًا
+  // ويصل للخصم حدث الخروج فيظهر له أنه فاز بالانسحاب.
   if (currentLevel === 'online') {
+    const shouldRecordOnlineLoss =
+      onlineMode &&
+      onlineOpponentConnected &&
+      !gameOver &&
+      !currentGameRecorded
+
+    if (shouldRecordOnlineLoss) {
+      gameOver = true
+
+      // التحديث المحلي للتصنيف والإحصائيات يحصل مباشرة،
+      // والحفظ السحابي يكمل بدون تعطيل شاشة الخروج.
+      recordGameResult(
+        false,
+        {
+          forfeited: true
+        }
+      )
+    }
 
     if (onlineMode) {
       leaveOnlineRoom()
@@ -4314,7 +4360,7 @@ async function exitCurrentGameAsLoss() {
     return
   }
 
-  // ضد الذكاء: الخروج يحتسب خسارة
+  // ضد الذكاء: الخروج يحتسب خسارة في الإحصائيات فقط.
   const shouldRecordLoss =
     !gameOver &&
     !currentGameRecorded &&
@@ -9287,9 +9333,16 @@ function finishGame(message) {
     'result-message'
 
   if (onlineMode) {
-    resultMessage.textContent = playerWon
-      ? 'قدرت تهزم خصمك!'
-      : 'خصمك فاز هالمرة.'
+    const opponentForfeited =
+      message.includes('انسحب') ||
+      message.includes('خرج')
+
+    resultMessage.textContent =
+      opponentForfeited
+        ? 'خصمك انسحب من المباراة، وتم احتساب الفوز لك.'
+        : playerWon
+          ? 'قدرت تهزم خصمك!'
+          : 'خصمك فاز هالمرة.'
   }
 
   else {

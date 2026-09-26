@@ -3908,3 +3908,76 @@ transform: none;
       inset 0 -6px 13px rgba(0,0,0,.16);
   }
 }
+
+
+/* ========================================
+   تحديث الأونلاين + خلفية اللعب + عنوان الرئيسية
+   ======================================== */
+
+/* اللاعب الأسود يشاهد جهته من أسفل الرقعة،
+   بدون تغيير إحداثيات أو قوانين اللعب. */
+.board.board-flipped {
+  transform: rotate(180deg);
+}
+
+/* رمز الملك يرجع مستقيم بعد قلب الرقعة. */
+.board.board-flipped .king-symbol {
+  transform: rotate(180deg);
+}
+
+/* نفس لوحة الخلفية الموجودة في الرئيسية تظهر أثناء اللعب. */
+.game-page {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.game-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      rgba(13, 13, 13, 0.68),
+      rgba(13, 13, 13, 0.68)
+    ),
+    url('/dama-bg.jpg');
+
+  background-size: 90% auto;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.game-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* توسيع اللوحة الخشبية خلف كلمة الدامة يمين ويسار. */
+.game-title {
+  min-width: 350px;
+  padding-left: 62px;
+  padding-right: 62px;
+}
+
+@media (max-width: 650px) {
+  /* نحافظ على تسريع الجوال الموجود ونضيف القلب للاعب الأسود. */
+  .board.board-flipped {
+    transform: rotate(180deg) translateZ(0);
+  }
+
+  .game-page::before {
+    background-size: 135% auto;
+    background-position: center;
+  }
+
+  .game-title {
+    width: min(285px, 88vw);
+    min-width: 0;
+    padding-left: 42px;
+    padding-right: 42px;
+  }
+}
