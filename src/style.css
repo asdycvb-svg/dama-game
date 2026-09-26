@@ -3274,3 +3274,637 @@ transform: none;
     z-index: 1;
   }
 }
+/* ========================================
+   شاشة نتيجة المباراة - نفس ستايل الملف
+======================================== */
+
+.game-result-overlay {
+  position: fixed;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background:
+    rgba(5, 4, 3, 0.82);
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  z-index: 9999;
+
+  animation:
+    resultOverlayIn .25s ease;
+}
+
+
+.game-result-box {
+  position: relative;
+
+  width: min(440px, 92vw);
+
+  padding:
+    34px 28px 26px;
+
+  overflow: hidden;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(42, 27, 19, .98),
+      rgba(22, 17, 14, .98)
+    );
+
+  border:
+    1px solid
+    rgba(216, 185, 138, .18);
+
+  border-radius: 22px;
+
+  text-align: center;
+
+  box-shadow:
+    0 30px 90px
+    rgba(0, 0, 0, .72),
+    inset 0 1px 0
+    rgba(255, 255, 255, .035);
+
+  animation:
+    resultCardIn .32s ease;
+}
+
+
+/* لمعة علوية */
+.game-result-box::before {
+  content: '';
+
+  position: absolute;
+
+  top: 0;
+  left: 50%;
+
+  transform:
+    translateX(-50%);
+
+  width: 68%;
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(216, 185, 138, .65),
+      transparent
+    );
+}
+
+
+/* الدائرة فوق العنوان */
+.game-result-box::after {
+  content: '♛';
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  width: 58px;
+  height: 58px;
+
+  margin:
+    0 auto 18px;
+
+  border-radius: 16px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #d9bd91,
+      #a77a4e
+    );
+
+  color: #1b120c;
+
+  font-size: 27px;
+  font-weight: 900;
+
+  box-shadow:
+    0 10px 30px
+    rgba(0,0,0,.35),
+    inset 0 1px 0
+    rgba(255,255,255,.35);
+}
+
+
+/* العنوان */
+.result-title {
+  margin:
+    0 0 7px;
+
+  color: #f3e9d2;
+
+  font-size: 30px;
+
+  font-weight: 800;
+
+  letter-spacing: -.4px;
+}
+
+
+/* نخفي الإيموجي القديم بصرياً شوي */
+.result-title.win,
+.result-title.lose {
+  color: #f3e9d2;
+}
+
+
+/* النص */
+.result-message {
+  margin:
+    0 0 24px;
+
+  color: #9f9283;
+
+  font-size: 14px;
+
+  line-height: 1.7;
+}
+
+
+/* كرت نسبة الفوز */
+.win-chance {
+  position: relative;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 15px;
+
+  margin-bottom: 20px;
+
+  padding:
+    16px 18px;
+
+  background:
+    rgba(255, 255, 255, .035);
+
+  border:
+    1px solid
+    rgba(216, 185, 138, .11);
+
+  border-radius: 14px;
+
+  text-align: right;
+}
+
+
+.win-chance::before {
+  content: 'أداء المباراة';
+
+  display: block;
+
+  position: absolute;
+
+  top: -8px;
+  right: 14px;
+
+  padding:
+    0 7px;
+
+  background: #211710;
+
+  color: #806f5f;
+
+  font-size: 10px;
+
+  letter-spacing: .3px;
+}
+
+
+.win-chance span {
+  color: #a99c8c;
+
+  font-size: 13px;
+
+  font-weight: 600;
+}
+
+
+.win-chance strong {
+  min-width: 68px;
+
+  padding:
+    8px 10px;
+
+  background:
+    rgba(216, 185, 138, .10);
+
+  border:
+    1px solid
+    rgba(216, 185, 138, .16);
+
+  border-radius: 10px;
+
+  color: #e0c49a;
+
+  font-size: 20px;
+
+  font-weight: 900;
+}
+
+
+/* الأزرار */
+.result-buttons {
+  display: grid;
+
+  grid-template-columns:
+    1.2fr .8fr;
+
+  gap: 10px;
+}
+
+
+.result-btn {
+  min-height: 50px;
+
+  border-radius: 12px;
+
+  padding:
+    13px 15px;
+
+  font-size: 14px;
+
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition:
+    transform .18s ease,
+    background .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease;
+}
+
+
+/* لعب مرة ثانية */
+.replay-btn {
+  background:
+    linear-gradient(
+      135deg,
+      #e6c89b,
+      #c69b68
+    );
+
+  color: #1b120c;
+
+  border: none;
+
+  box-shadow:
+    0 8px 22px
+    rgba(0,0,0,.25);
+}
+
+
+.replay-btn:hover {
+  transform:
+    translateY(-2px);
+
+  box-shadow:
+    0 12px 28px
+    rgba(0,0,0,.34);
+}
+
+
+/* الرئيسية */
+.home-btn {
+  background:
+    rgba(255,255,255,.035);
+
+  color: #c7b8a7;
+
+  border:
+    1px solid
+    rgba(216,185,138,.14);
+}
+
+
+.home-btn:hover {
+  background:
+    rgba(216,185,138,.08);
+
+  border-color:
+    rgba(216,185,138,.27);
+
+  transform:
+    translateY(-2px);
+}
+
+
+/* الزر إذا كان ينتظر إعادة المباراة */
+.result-btn:disabled {
+  opacity: .55;
+
+  cursor: wait;
+
+  transform: none;
+}
+
+
+/* الحركات */
+@keyframes resultOverlayIn {
+
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+
+@keyframes resultCardIn {
+
+  from {
+    opacity: 0;
+
+    transform:
+      translateY(18px)
+      scale(.965);
+  }
+
+  to {
+    opacity: 1;
+
+    transform:
+      translateY(0)
+      scale(1);
+  }
+}
+
+
+/* الجوال */
+@media (max-width: 500px) {
+
+  .game-result-box {
+    width: 94vw;
+
+    padding:
+      28px 18px 20px;
+
+    border-radius: 19px;
+  }
+
+  .game-result-box::after {
+    width: 52px;
+    height: 52px;
+
+    border-radius: 14px;
+
+    font-size: 24px;
+  }
+
+  .result-title {
+    font-size: 25px;
+  }
+
+  .result-message {
+    font-size: 13px;
+  }
+
+  .result-buttons {
+    grid-template-columns: 1fr;
+  }
+
+}
+#turnText {
+  font-size: 45px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+/* =========================
+   تحسين سلاسة الدامة للجوال
+========================= */
+
+.board,
+.square,
+.checker-piece {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 650px) {
+
+  /* نخلي الرقعة طبقة واحدة بدل إعادة رسم الصفحة كلها */
+  .board {
+    contain: layout paint;
+    transform: translateZ(0);
+  }
+
+  /* drop-shadow على كل حجر كان مكلف على بعض الجوالات */
+  .checker-piece {
+    filter: none !important;
+
+    transition:
+      transform 0.045s ease !important;
+
+    will-change: auto;
+
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,.16),
+      inset 0 -3px 4px rgba(0,0,0,.18),
+      0 3px 5px rgba(0,0,0,.30) !important;
+  }
+
+  .selected-piece {
+    transform: scale(1.055);
+    will-change: transform;
+  }
+
+  /* نحافظ على العلامات لكن نقلل التوهج المكلف */
+  .possible-move::after {
+    box-shadow:
+      0 0 8px rgba(243, 233, 210, 0.45);
+  }
+
+  .capture-move::after {
+    box-shadow:
+      0 0 0 3px rgba(243, 233, 210, 0.15),
+      0 0 10px rgba(243, 233, 210, 0.55);
+  }
+}
+
+/* الجوال ما يحتاج hover بعد اللمس؛ أحيانًا كان يعطي إحساس تأخير */
+@media (hover: none) and (pointer: coarse) {
+
+  .cream-checker:hover {
+    transform: none !important;
+  }
+
+  .possible-move:hover::after {
+    width: 22%;
+    height: 22%;
+    opacity: .8;
+  }
+
+  .result-btn:hover,
+  .primary-btn:hover,
+  .secondary-btn:hover,
+  .game-option:hover,
+  .difficulty-btn:hover {
+    transform: none;
+  }
+}
+
+/* ========================================
+   تنبيه الأكل الإجباري
+   حلقة حمراء خفيفة حول حجر الأكل
+======================================== */
+
+.checker-piece.forced-capture-alert::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(235, 72, 72, 0.82);
+  box-shadow:
+    0 0 0 2px rgba(235, 72, 72, 0.10),
+    0 0 13px rgba(235, 72, 72, 0.52);
+  pointer-events: none;
+  z-index: -1;
+  animation: forcedCapturePulse 0.72s ease-in-out 1;
+}
+
+@keyframes forcedCapturePulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  35% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+
+  100% {
+    opacity: 0.82;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 650px) {
+  .checker-piece.forced-capture-alert::before {
+    inset: -5px;
+    box-shadow:
+      0 0 0 1px rgba(235, 72, 72, 0.10),
+      0 0 9px rgba(235, 72, 72, 0.44);
+  }
+}
+
+/* ========================================
+   عنوان الدامة - لوحة خشبية فخمة
+   ======================================== */
+.game-title {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 290px;
+  padding: 19px 42px 21px;
+  margin: 10px auto 18px;
+
+  font-family:
+    "Geeza Pro",
+    "Noto Kufi Arabic",
+    Tahoma,
+    Arial,
+    sans-serif;
+  font-size: 60px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+
+  color: #f3e3c2;
+
+  background:
+    repeating-linear-gradient(
+      7deg,
+      rgba(255,255,255,.035) 0px,
+      rgba(255,255,255,.035) 1px,
+      transparent 1px,
+      transparent 8px
+    ),
+    repeating-linear-gradient(
+      92deg,
+      rgba(42,20,8,.12) 0px,
+      rgba(42,20,8,.12) 1px,
+      transparent 1px,
+      transparent 13px
+    ),
+    linear-gradient(
+      145deg,
+      #7b4b2b 0%,
+      #5b351f 48%,
+      #3f2518 100%
+    );
+
+  border: 4px solid #2b190f;
+  border-radius: 16px;
+
+  box-shadow:
+    0 16px 35px rgba(0,0,0,.38),
+    0 0 0 2px rgba(186,132,82,.38),
+    inset 0 1px 0 rgba(255,255,255,.12),
+    inset 0 -8px 16px rgba(0,0,0,.18);
+
+  text-shadow:
+    0 2px 0 rgba(48,25,12,.85),
+    0 4px 10px rgba(0,0,0,.32);
+}
+
+.game-title::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(234,199,150,.26);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.game-title::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 7px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(242,211,166,.38),
+    transparent
+  );
+  pointer-events: none;
+}
+
+@media (max-width: 650px) {
+  .game-title {
+    min-width: 235px;
+    padding: 16px 30px 18px;
+    margin: 8px auto 16px;
+    font-size: 48px;
+    border-width: 3px;
+    border-radius: 14px;
+    box-shadow:
+      0 12px 26px rgba(0,0,0,.34),
+      0 0 0 1px rgba(186,132,82,.36),
+      inset 0 1px 0 rgba(255,255,255,.10),
+      inset 0 -6px 13px rgba(0,0,0,.16);
+  }
+}

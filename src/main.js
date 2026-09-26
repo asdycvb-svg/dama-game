@@ -1,22 +1,156 @@
 import './style.css'
 import { io } from 'socket.io-client'
 import { supabase } from './supabase.js'
-const moveSound =
-  new Audio('/move.wav')
+const AUDIO_SOURCES = {
+  move: '/move.wav',
+  win: '/win.wav',
+  lose: '/lose.wav'
+}
 
-moveSound.preload = 'auto'
-moveSound.volume = 0.6
+function createGameAudio(src, volume) {
+  const audio = new Audio(src)
+  audio.preload = 'auto'
+  audio.playsInline = true
+  audio.volume = volume
+
+  try {
+    audio.load()
+  }
+  catch (error) {
+    // بعض متصفحات الجوال تتجاهل load قبل أول تفاعل
+  }
+
+  return audio
+}
+
+// Pool جاهز مسبقًا بدل cloneNode مع كل حركة.
+// هذا يقلل تأخير الصوت خصوصًا على الجوال.
+const moveSoundPool =
+  Array.from(
+    { length: 4 },
+    () =>
+      createGameAudio(
+        AUDIO_SOURCES.move,
+        0.6
+      )
+  )
+
+const winSound =
+  createGameAudio(
+    AUDIO_SOURCES.win,
+    0.7
+  )
+
+const loseSound =
+  createGameAudio(
+    AUDIO_SOURCES.lose,
+    0.7
+  )
+
+let moveSoundIndex = 0
+let audioPrimed = false
+
+function primeGameAudio() {
+  if (audioPrimed) return
+  audioPrimed = true
+
+  const sounds = [
+    ...moveSoundPool,
+    winSound,
+    loseSound
+  ]
+
+  sounds.forEach(audio => {
+    const originalVolume =
+      audio.volume
+
+    try {
+      audio.volume = 0
+      audio.currentTime = 0
+
+      const playPromise =
+        audio.play()
+
+      if (
+        playPromise &&
+        typeof playPromise.then === 'function'
+      ) {
+        playPromise
+          .then(() => {
+            audio.pause()
+            audio.currentTime = 0
+            audio.volume = originalVolume
+          })
+          .catch(() => {
+            audio.volume = originalVolume
+          })
+      }
+
+      else {
+        audio.pause()
+        audio.currentTime = 0
+        audio.volume = originalVolume
+      }
+    }
+
+    catch (error) {
+      audio.volume = originalVolume
+    }
+  })
+}
+
+// أول لمسة تجهز الأصوات داخل قيود تشغيل الصوت في الجوال.
+document.addEventListener(
+  'pointerdown',
+  primeGameAudio,
+  {
+    once: true,
+    capture: true
+  }
+)
+
+document.addEventListener(
+  'touchstart',
+  primeGameAudio,
+  {
+    once: true,
+    capture: true,
+    passive: true
+  }
+)
+
+function playAudioNow(audio) {
+  try {
+    audio.pause()
+    audio.currentTime = 0
+
+    audio
+      .play()
+      .catch(() => {})
+  }
+
+  catch (error) {
+    // الصوت تحسين إضافي ولا نوقف اللعب لو المتصفح رفضه
+  }
+}
+
+function playResultSound(playerWon) {
+  playAudioNow(
+    playerWon
+      ? winSound
+      : loseSound
+  )
+}
 
 function playMoveSound() {
   const sound =
-    moveSound.cloneNode()
+    moveSoundPool[moveSoundIndex]
 
-  sound.volume =
-    moveSound.volume
+  moveSoundIndex =
+    (moveSoundIndex + 1) %
+    moveSoundPool.length
 
-  sound
-    .play()
-    .catch(() => {})
+  playAudioNow(sound)
 }
 
 // ========================================
@@ -39,6 +173,7 @@ let onlineRoomCode = null
 let onlinePlayerColor = null
 let onlineMode = false
 let onlineOpponentConnected = false
+let onlineOpponentRating = null
 
 
 
@@ -183,16 +318,12 @@ async function loadCloudProfile(user) {
       ...(data.levels || {}),
 
       progress: {
-        ...defaults.levels.progress,
-        ...(data.levels?.progress || {}),
-
-        xp:
-          data
-            .levels
-            ?.progress
-            ?.xp ??
-          calculateLegacyXpFromLevels(
-            data.levels || {}
+        rating:
+          normalizeRating(
+            data
+              .levels
+              ?.progress
+              ?.rating
           )
       }
     },
@@ -207,7 +338,7 @@ async function loadCloudProfile(user) {
     data
       .levels
       ?.progress
-      ?.xp == null
+      ?.rating == null
   ) {
     await saveCloudProfile()
   }
@@ -279,209 +410,267 @@ let pendingProfileSave =
   Promise.resolve()
 
 // ========================================
-// ⭐ نظام المستوى و XP
+// ♛ نظام التصنيف بالنقاط - أونلاين فقط
 // ========================================
 
-const MAX_PLAYER_LEVEL = 100
+const RATING_START = 400
+const RATING_MIN = 400
+const RATING_MAX = 3000
+const RATING_K = 32
 
-const XP_REWARDS = {
-  easy: {
-    win: 10,
-    loss: 2
+const RATING_TIERS = [
+  {
+    key: 'beginner',
+    label: 'مبتدئ',
+    min: 400,
+    max: 799
   },
-
-  medium: {
-    win: 20,
-    loss: 4
+  {
+    key: 'rising',
+    label: 'مبتدئ متدرج',
+    min: 800,
+    max: 999
   },
-
-  hard: {
-    win: 35,
-    loss: 7
+  {
+    key: 'intermediate',
+    label: 'متوسط',
+    min: 1000,
+    max: 1399
   },
-
-  impossible: {
-    win: 60,
-    loss: 12
+  {
+    key: 'advanced',
+    label: 'متقدم',
+    min: 1400,
+    max: 1799
   },
-
-  online: {
-    win: 40,
-    loss: 8
+  {
+    key: 'expert',
+    label: 'خبير',
+    min: 1800,
+    max: 2199
+  },
+  {
+    key: 'grandmaster',
+    label: 'جراند ماستر',
+    min: 2200,
+    max: 3000
   }
-}
+]
 
-function calculateLegacyXpFromLevels(
-  levels = {}
-) {
-  let total = 0
+let lastRatingChange = 0
+let lastRatingBefore = RATING_START
+let lastRatingAfter = RATING_START
 
-  Object
-    .keys(XP_REWARDS)
-    .forEach(level => {
-      const stats =
-        levels?.[level] || {}
+function normalizeRating(value) {
+  const number = Number(value)
 
-      const wins =
-        Number(stats.wins) || 0
-
-      const losses =
-        Number(stats.losses) || 0
-
-      total +=
-        (wins *
-          XP_REWARDS[level].win) +
-        (losses *
-          XP_REWARDS[level].loss)
-    })
+  if (!Number.isFinite(number)) {
+    return RATING_START
+  }
 
   return Math.max(
-    0,
-    total
+    RATING_MIN,
+    Math.min(
+      RATING_MAX,
+      Math.round(number)
+    )
   )
 }
 
-function getLevelRequirement(level) {
-  if (level >= MAX_PLAYER_LEVEL) {
-    return 0
-  }
+function getRatingTier(rating) {
+  const safeRating =
+    normalizeRating(rating)
 
-  return 50 + ((level - 1) * 10)
+  return (
+    RATING_TIERS.find(
+      tier =>
+        safeRating >= tier.min &&
+        safeRating <= tier.max
+    ) ||
+    RATING_TIERS[0]
+  )
 }
 
-function getMaxTotalXp() {
-  let total = 0
-
-  for (
-    let level = 1;
-    level < MAX_PLAYER_LEVEL;
-    level++
-  ) {
-    total +=
-      getLevelRequirement(level)
-  }
-
-  return total
-}
-
-function getPlayerTotalXp(
+function getPlayerRating(
   profile = playerProfile
 ) {
-  const storedXp =
+  return normalizeRating(
     profile
       ?.levels
       ?.progress
-      ?.xp
-
-  if (storedXp == null) {
-    return Math.max(
-      0,
-      calculateLegacyXpFromLevels(
-        profile?.levels || {}
-      )
-    )
-  }
-
-  return Math.max(
-    0,
-    Number(storedXp) || 0
+      ?.rating
   )
 }
 
-function getPlayerLevelState(
+function getPlayerRatingState(
   profile = playerProfile
 ) {
-  const totalXp =
-    Math.min(
-      getPlayerTotalXp(profile),
-      getMaxTotalXp()
+  const rating =
+    getPlayerRating(profile)
+
+  const tier =
+    getRatingTier(rating)
+
+  const tierIndex =
+    RATING_TIERS.findIndex(
+      item => item.key === tier.key
     )
 
-  let level = 1
-  let remainingXp =
-    totalXp
+  const nextTier =
+    tierIndex >= 0 &&
+    tierIndex < RATING_TIERS.length - 1
+      ? RATING_TIERS[tierIndex + 1]
+      : null
 
-  while (
-    level < MAX_PLAYER_LEVEL
-  ) {
-    const needed =
-      getLevelRequirement(level)
+  const nextRating =
+    nextTier
+      ? nextTier.min
+      : RATING_MAX
 
-    if (remainingXp < needed) {
-      return {
-        level,
-        totalXp,
-        currentXp: remainingXp,
-        nextXp: needed,
-        percent:
-          Math.max(
-            0,
-            Math.min(
-              100,
-              Math.round(
-                (remainingXp / needed) *
-                100
-              )
-            )
+  let percent = 100
+
+  if (nextTier) {
+    const range =
+      nextRating - tier.min
+
+    percent =
+      range > 0
+        ? Math.round(
+            (
+              (rating - tier.min) /
+              range
+            ) * 100
           )
-      }
-    }
+        : 100
+  }
 
-    remainingXp -= needed
-    level++
+  else if (RATING_MAX > tier.min) {
+    percent = Math.round(
+      (
+        (rating - tier.min) /
+        (RATING_MAX - tier.min)
+      ) * 100
+    )
   }
 
   return {
-    level: MAX_PLAYER_LEVEL,
-    totalXp,
-    currentXp: 0,
-    nextXp: 0,
-    percent: 100
+    rating,
+    tier,
+    nextTier,
+    nextRating,
+    percent:
+      Math.max(
+        0,
+        Math.min(100, percent)
+      )
   }
 }
 
-function getXpReward(
-  level,
-  playerWon,
-  forfeited = false
-) {
-  if (forfeited) {
-    return 0
-  }
-
-  const reward =
-    XP_REWARDS[level] ||
-    XP_REWARDS.easy
-
-  return playerWon
-    ? reward.win
-    : reward.loss
-}
-
-function addProfileXp(amount) {
+function setPlayerRating(value) {
   if (!playerProfile.levels.progress) {
     playerProfile.levels.progress = {
-      xp: 0
+      rating: RATING_START
     }
   }
-
-  const currentXp =
-    getPlayerTotalXp()
 
   playerProfile
     .levels
     .progress
-    .xp =
-      Math.min(
-        getMaxTotalXp(),
-        currentXp +
-          Math.max(
-            0,
-            Number(amount) || 0
-          )
-      )
+    .rating =
+      normalizeRating(value)
 }
 
+function calculateRatingResult(
+  playerWon,
+  opponentRating = onlineOpponentRating
+) {
+  const playerRating =
+    getPlayerRating()
+
+  const safeOpponentRating =
+    normalizeRating(
+      opponentRating == null
+        ? playerRating
+        : opponentRating
+    )
+
+  const expectedScore =
+    1 /
+    (
+      1 +
+      Math.pow(
+        10,
+        (
+          safeOpponentRating -
+          playerRating
+        ) / 400
+      )
+    )
+
+  const actualScore =
+    playerWon ? 1 : 0
+
+  const rawChange =
+    Math.round(
+      RATING_K *
+      (actualScore - expectedScore)
+    )
+
+  const ratingAfter =
+    normalizeRating(
+      playerRating + rawChange
+    )
+
+  return {
+    before: playerRating,
+    after: ratingAfter,
+    change:
+      ratingAfter - playerRating,
+    opponent: safeOpponentRating
+  }
+}
+
+function applyOnlineRating(playerWon) {
+  const result =
+    calculateRatingResult(
+      playerWon,
+      onlineOpponentRating
+    )
+
+  setPlayerRating(result.after)
+
+  lastRatingBefore = result.before
+  lastRatingAfter = result.after
+  lastRatingChange = result.change
+
+  return result
+}
+
+function getRankCheckerClass(
+  state = getPlayerRatingState()
+) {
+  return `rank-${state.tier.key}`
+}
+
+function setRankCheckerElement(
+  element,
+  state = getPlayerRatingState()
+) {
+  if (!element) return
+
+  RATING_TIERS.forEach(tier => {
+    element.classList.remove(
+      `rank-${tier.key}`
+    )
+  })
+
+  element.classList.add(
+    getRankCheckerClass(state)
+  )
+
+  element.title =
+    `${state.tier.label} • ${state.rating} نقطة`
+}
 
 function createDefaultProfile() {
   return {
@@ -524,7 +713,7 @@ online: {
 },
 
 progress: {
-  xp: 0
+  rating: RATING_START
 }
     },
 
@@ -581,16 +770,12 @@ function loadProfile() {
         },
 
         progress: {
-          ...defaultProfile.levels.progress,
-          ...(data.levels?.progress || {}),
-
-          xp:
-            data
-              .levels
-              ?.progress
-              ?.xp ??
-            calculateLegacyXpFromLevels(
-              data.levels || {}
+          rating:
+            normalizeRating(
+              data
+                .levels
+                ?.progress
+                ?.rating
             )
         }
       },
@@ -709,14 +894,23 @@ function recordGameResult(
       .losses++
   }
 
-  const xpGained =
-    getXpReward(
-      level,
-      playerWon,
-      forfeited
-    )
+  // التصنيف يتحرك في الأونلاين فقط.
+  // اللعب ضد الذكاء يحدّث الإحصائيات والحركات فقط.
+  let ratingResult = null
 
-  addProfileXp(xpGained)
+  lastRatingChange = 0
+  lastRatingBefore =
+    getPlayerRating()
+  lastRatingAfter =
+    lastRatingBefore
+
+  if (
+    level === 'online' &&
+    onlineOpponentRating != null
+  ) {
+    ratingResult =
+      applyOnlineRating(playerWon)
+  }
 
   // ========================================
   // سجل آخر المباريات
@@ -733,8 +927,12 @@ function recordGameResult(
     moves:
       currentGameMoves,
 
-    xp:
-      xpGained,
+    ratingChange:
+      ratingResult?.change || 0,
+
+    rating:
+      ratingResult?.after ??
+      getPlayerRating(),
 
     forfeited,
 
@@ -790,6 +988,139 @@ function ensureProgressionStyles() {
       border: 1px solid rgba(255,255,255,.12);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
       white-space: nowrap;
+    }
+
+    .rank-checker {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.24);
+      box-shadow:
+        inset 0 2px 3px rgba(255,255,255,.18),
+        inset 0 -3px 5px rgba(0,0,0,.24),
+        0 4px 10px rgba(0,0,0,.26);
+    }
+
+    .rank-checker::before {
+      content: '';
+      position: absolute;
+      inset: 18%;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.24);
+    }
+
+    .rank-checker::after {
+      position: relative;
+      z-index: 1;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .rank-checker-mini {
+      width: 24px;
+      height: 24px;
+    }
+
+    .rank-checker-large {
+      width: 64px;
+      height: 64px;
+      border-width: 3px;
+    }
+
+    .rank-checker-large::after {
+      font-size: 23px;
+    }
+
+    .rank-beginner {
+      background: linear-gradient(145deg, #b58a60, #755037);
+      border-color: #caa47d;
+    }
+
+    .rank-beginner::after {
+      content: '•';
+      color: #f4dfc5;
+    }
+
+    .rank-rising {
+      background: linear-gradient(145deg, #d39a5c, #8a542c);
+      border-color: #e2b47e;
+    }
+
+    .rank-rising::after {
+      content: '◆';
+      color: #ffe2b8;
+    }
+
+    .rank-intermediate {
+      background: linear-gradient(145deg, #ded8ca, #807d77);
+      border-color: #f1ece1;
+    }
+
+    .rank-intermediate::after {
+      content: '✦';
+      color: #2b2925;
+    }
+
+    .rank-advanced {
+      background: linear-gradient(145deg, #e8c582, #a4702f);
+      border-color: #f6d89d;
+      box-shadow:
+        inset 0 2px 3px rgba(255,255,255,.28),
+        inset 0 -3px 5px rgba(70,37,8,.28),
+        0 4px 12px rgba(153,104,38,.30);
+    }
+
+    .rank-advanced::after {
+      content: '✦';
+      color: #573812;
+    }
+
+    .rank-expert {
+      background: linear-gradient(145deg, #282522, #090909);
+      border-color: #d4b078;
+      box-shadow:
+        inset 0 2px 3px rgba(255,255,255,.10),
+        inset 0 -3px 5px rgba(0,0,0,.45),
+        0 4px 14px rgba(212,176,120,.20);
+    }
+
+    .rank-expert::after {
+      content: '♛';
+      color: #d8b77f;
+    }
+
+    .rank-grandmaster {
+      background:
+        radial-gradient(circle at 35% 28%, #fff6d8 0 12%, transparent 13%),
+        linear-gradient(145deg, #f0d8a1, #9b642b 58%, #42240e);
+      border-color: #ffe4a9;
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,.38),
+        inset 0 -4px 6px rgba(84,43,8,.38),
+        0 0 0 2px rgba(220,175,94,.14),
+        0 5px 18px rgba(222,176,91,.34);
+    }
+
+    .rank-grandmaster::after {
+      content: '♛';
+      color: #3b210c;
+      text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    }
+
+    .leaderboard-player-name-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .leaderboard-player-name-line strong {
+      min-width: 0;
     }
 
     .profile-name-level-row {
@@ -1112,13 +1443,17 @@ function showHome() {
 
       <!-- زر الملف الشخصي -->
       <button id="profileBtn" class="profile-top-btn">
-        <span class="profile-top-icon">👤</span>
+        <span
+          id="profileRankPiece"
+          class="rank-checker rank-checker-mini rank-beginner"
+          aria-hidden="true"
+        ></span>
         <span id="profileButtonName">لاعب</span>
         <span
           id="profileLevelBadge"
           class="player-level-badge"
         >
-          Lv.1
+          400
         </span>
       </button>
 
@@ -1175,7 +1510,11 @@ function showHome() {
 
           <div>
             <div class="profile-big-avatar">
-              👤
+              <span
+                id="profileRankPieceLarge"
+                class="rank-checker rank-checker-large rank-beginner"
+                aria-hidden="true"
+              ></span>
             </div>
 
             <div class="profile-name-level-row">
@@ -1187,7 +1526,7 @@ function showHome() {
                 id="profilePageLevelBadge"
                 class="player-level-badge profile-page-level-badge"
               >
-                Lv.1
+                مبتدئ • 400
               </span>
             </div>
 
@@ -1198,11 +1537,11 @@ function showHome() {
             <div class="profile-xp-box">
               <div class="profile-xp-head">
                 <span id="profileXpText">
-                  0 / 50 XP
+                  400 نقطة
                 </span>
 
                 <span id="profileXpTotal">
-                  0 XP
+                  التالي: 800
                 </span>
               </div>
 
@@ -1695,7 +2034,7 @@ function showHome() {
             </h2>
 
             <p>
-              الترتيب حسب عدد الانتصارات
+              الترتيب حسب تصنيف الأونلاين
             </p>
           </div>
         </div>
@@ -1705,7 +2044,7 @@ function showHome() {
           class="leaderboard-main"
         >
           <div class="leaderboard-note">
-            كل فوز = نقطة واحدة
+            التصنيف يبدأ من 400 ويتغير بنتائج الأونلاين فقط
           </div>
 
           <div
@@ -1917,8 +2256,8 @@ function updateProfileUI() {
       playerProfile.name
   }
 
-  const levelState =
-    getPlayerLevelState()
+  const ratingState =
+    getPlayerRatingState()
 
   const levelBadge =
     document.querySelector(
@@ -1947,34 +2286,48 @@ function updateProfileUI() {
 
   if (levelBadge) {
     levelBadge.textContent =
-      `Lv.${levelState.level}`
+      `${ratingState.rating}`
+
+    levelBadge.title =
+      ratingState.tier.label
   }
 
   if (pageLevelBadge) {
     pageLevelBadge.textContent =
-      levelState.level >=
-      MAX_PLAYER_LEVEL
-        ? 'Lv.100 MAX'
-        : `Lv.${levelState.level}`
+      `${ratingState.tier.label} • ${ratingState.rating}`
   }
 
   if (xpText) {
     xpText.textContent =
-      levelState.level >=
-      MAX_PLAYER_LEVEL
-        ? 'وصلت للمستوى الأقصى'
-        : `${levelState.currentXp} / ${levelState.nextXp} XP`
+      `${ratingState.rating} نقطة`
   }
 
   if (xpTotal) {
     xpTotal.textContent =
-      `${levelState.totalXp} XP`
+      ratingState.nextTier
+        ? `التالي: ${ratingState.nextTier.label} عند ${ratingState.nextRating}`
+        : 'أعلى تصنيف • 3000'
   }
 
   if (xpFill) {
     xpFill.style.width =
-      `${levelState.percent}%`
+      `${ratingState.percent}%`
   }
+
+  setRankCheckerElement(
+    document.querySelector(
+      '#profileRankPiece'
+    ),
+    ratingState
+  )
+
+  setRankCheckerElement(
+    document.querySelector(
+      '#profileRankPieceLarge'
+    ),
+    ratingState
+  )
+
 
 
   // ========================================
@@ -2175,8 +2528,8 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;')
 }
 
-function getPublicPlayerLevelState(player) {
-  return getPlayerLevelState({
+function getPublicPlayerRatingState(player) {
+  return getPlayerRatingState({
     levels:
       player?.levels || {}
   })
@@ -2217,9 +2570,39 @@ async function loadLeaderboard() {
   }
 
   leaderboardPlayers =
-    Array.isArray(data)
+    (Array.isArray(data)
       ? data
-      : []
+      : [])
+      .filter(player => {
+        const online =
+          getPublicLevelStat(
+            player,
+            'online'
+          )
+
+        return online.played > 0
+      })
+      .sort((a, b) => {
+        const ratingDiff =
+          getPublicPlayerRatingState(b)
+            .rating -
+          getPublicPlayerRatingState(a)
+            .rating
+
+        if (ratingDiff !== 0) {
+          return ratingDiff
+        }
+
+        const aOnline =
+          getPublicLevelStat(a, 'online')
+        const bOnline =
+          getPublicLevelStat(b, 'online')
+
+        return (
+          bOnline.wins -
+          aOnline.wins
+        )
+      })
 
   renderLeaderboard()
 }
@@ -2250,12 +2633,18 @@ function renderLeaderboard() {
         const rank =
           index + 1
 
-        const points =
-          Number(player.wins) || 0
-
-        const levelState =
-          getPublicPlayerLevelState(
+        const ratingState =
+          getPublicPlayerRatingState(
             player
+          )
+
+        const points =
+          ratingState.rating
+
+        const onlineStats =
+          getPublicLevelStat(
+            player,
+            'online'
           )
 
         const rankText =
@@ -2278,19 +2667,26 @@ function renderLeaderboard() {
             </span>
 
             <span class="leaderboard-player-copy">
-              <strong>
-                ${escapeHtml(player.name || 'لاعب')}
-              </strong>
+              <span class="leaderboard-player-name-line">
+                <span
+                  class="rank-checker rank-checker-mini ${getRankCheckerClass(ratingState)}"
+                  aria-hidden="true"
+                ></span>
+
+                <strong>
+                  ${escapeHtml(player.name || 'لاعب')}
+                </strong>
+              </span>
 
               <small>
-                Lv.${levelState.level}
-                • ${Number(player.games) || 0} مباراة
+                ${escapeHtml(ratingState.tier.label)}
+                • ${onlineStats.played} مباراة أونلاين
               </small>
             </span>
 
             <span class="leaderboard-points">
               <strong>${points}</strong>
-              <small>نقطة</small>
+              <small>تصنيف</small>
             </span>
           </button>
         `
@@ -2363,8 +2759,8 @@ function openPublicPlayerProfile(
 
   if (!main || !view) return
 
-  const levelState =
-    getPublicPlayerLevelState(
+  const ratingState =
+    getPublicPlayerRatingState(
       player
     )
 
@@ -2412,7 +2808,10 @@ function openPublicPlayerProfile(
 
     <div class="public-profile-card">
       <div class="public-profile-avatar">
-        👤
+        <span
+          class="rank-checker rank-checker-large ${getRankCheckerClass(ratingState)}"
+          aria-hidden="true"
+        ></span>
       </div>
 
       <div class="public-profile-name-row">
@@ -2421,30 +2820,29 @@ function openPublicPlayerProfile(
         </h2>
 
         <span class="player-level-badge">
-          Lv.${levelState.level}
+          ${escapeHtml(ratingState.tier.label)} • ${ratingState.rating}
         </span>
       </div>
 
       <div class="public-profile-xp">
         <div class="profile-xp-head">
           <span>
-            ${
-              levelState.level >=
-              MAX_PLAYER_LEVEL
-                ? 'MAX'
-                : `${levelState.currentXp} / ${levelState.nextXp} XP`
-            }
+            ${ratingState.rating} نقطة
           </span>
 
           <span>
-            ${levelState.totalXp} XP
+            ${
+              ratingState.nextTier
+                ? `التالي: ${escapeHtml(ratingState.nextTier.label)} عند ${ratingState.nextRating}`
+                : 'أعلى تصنيف • 3000'
+            }
           </span>
         </div>
 
         <div class="profile-xp-track">
           <span
             class="profile-xp-fill"
-            style="width: ${levelState.percent}%"
+            style="width: ${ratingState.percent}%"
           ></span>
         </div>
       </div>
@@ -2466,8 +2864,8 @@ function openPublicPlayerProfile(
         </div>
 
         <div>
-          <span>النقاط</span>
-          <strong>${Number(player.wins) || 0}</strong>
+          <span>التصنيف</span>
+          <strong>${ratingState.rating}</strong>
         </div>
       </div>
 
@@ -3142,6 +3540,7 @@ function createOnlineRoom() {
       onlinePlayerColor = response.color
       onlineMode = true
       onlineOpponentConnected = false
+      onlineOpponentRating = null
       currentLevel = 'online'
 
       // صاحب الروم يدخل اللوحة مباشرة
@@ -3319,6 +3718,7 @@ function joinOnlineRoom() {
       onlinePlayerColor = response.color
       onlineMode = true
       onlineOpponentConnected = true
+      onlineOpponentRating = null
       currentLevel = 'online'
 
       error.textContent = ''
@@ -3519,6 +3919,7 @@ function leaveOnlineRoom() {
   onlinePlayerColor = null
   onlineMode = false
   onlineOpponentConnected = false
+  onlineOpponentRating = null
 }
 
 
@@ -3542,6 +3943,10 @@ function selectOnlinePiece(piece) {
     selectedPiece &&
     selectedPiece !== piece
   ) {
+    showForcedCaptureHint(
+      onlinePlayerColor,
+      selectedPiece
+    )
     return
   }
 
@@ -3552,6 +3957,9 @@ function selectOnlinePiece(piece) {
     hasAnyCapture(onlinePlayerColor) &&
     captures.length === 0
   ) {
+    showForcedCaptureHint(
+      onlinePlayerColor
+    )
     return
   }
 
@@ -3692,7 +4100,8 @@ function moveSelectedPieceOnline(square) {
       capturedRow,
       capturedCol,
       continueCapture,
-      nextTurn
+      nextTurn,
+      rating: getPlayerRating()
     }
   )
 
@@ -3725,6 +4134,16 @@ function applyRemoteOnlineMove(move) {
     !move
   ) {
     return
+  }
+
+  if (
+    move.rating != null &&
+    Number.isFinite(
+      Number(move.rating)
+    )
+  ) {
+    onlineOpponentRating =
+      normalizeRating(move.rating)
   }
 
   const fromRow = Number(move.fromRow)
@@ -3883,22 +4302,26 @@ function getLevelName(level) {
 // ========================================
 
 async function exitCurrentGameAsLoss() {
-  const isOnlineMatch =
-    currentLevel === 'online'
 
+  // الأونلاين: الخروج ما يحتسب خسارة
+  if (currentLevel === 'online') {
+
+    if (onlineMode) {
+      leaveOnlineRoom()
+    }
+
+    showHome()
+    return
+  }
+
+  // ضد الذكاء: الخروج يحتسب خسارة
   const shouldRecordLoss =
     !gameOver &&
     !currentGameRecorded &&
-    currentLevel &&
-    (
-      !isOnlineMatch ||
-      (
-        onlineMode &&
-        onlineOpponentConnected
-      )
-    )
+    currentLevel
 
   if (shouldRecordLoss) {
+
     gameOver = true
 
     await recordGameResult(
@@ -3907,10 +4330,6 @@ async function exitCurrentGameAsLoss() {
         forfeited: true
       }
     )
-  }
-
-  if (onlineMode) {
-    leaveOnlineRoom()
   }
 
   showHome()
@@ -4520,6 +4939,10 @@ function selectPiece(piece) {
     selectedPiece &&
     selectedPiece !== piece
   ) {
+    showForcedCaptureHint(
+      'cream',
+      selectedPiece
+    )
     return
   }
 
@@ -4531,6 +4954,7 @@ function selectPiece(piece) {
     hasAnyCapture('cream') &&
     captures.length === 0
   ) {
+    showForcedCaptureHint('cream')
     return
   }
 
@@ -4732,6 +5156,14 @@ playMoveSound()
 }
 
 // ========================================
+// سرعة حركة الكمبيوتر
+// تأخير خفيف حتى تكون الحركة طبيعية وواضحة
+// ========================================
+
+const COMPUTER_MOVE_DELAY = 800
+const COMPUTER_CAPTURE_DELAY = 650
+
+// ========================================
 // بدء دور الكمبيوتر
 // ========================================
 
@@ -4744,10 +5176,10 @@ function startComputerTurn() {
 
   updatePlayerHighlight()
 
-  // تأخير بسيط ليظهر طبيعي
+  // تأخير خفيف قبل حركة الكمبيوتر
   setTimeout(() => {
     computerMove()
-  }, 700)
+  }, COMPUTER_MOVE_DELAY)
 }
 
 // ========================================
@@ -5141,7 +5573,7 @@ function executeImpossibleTurn(
         steps,
         nextIndex
       )
-    }, 350)
+    }, COMPUTER_CAPTURE_DELAY)
 
     return
   }
@@ -8450,7 +8882,7 @@ function executeComputerMove(move) {
         executeComputerMove(
           nextMove
         )
-      }, 500)
+      }, COMPUTER_CAPTURE_DELAY)
 
       return
     }
@@ -8602,6 +9034,84 @@ function updatePlayerHighlight() {
 }
 
 // ========================================
+// تنبيه الأكل الإجباري
+// تأثير أحمر بسيط حول الحجر المطلوب
+// ========================================
+
+let forcedCaptureHintTimer = null
+
+function clearForcedCaptureHint() {
+  if (forcedCaptureHintTimer) {
+    clearTimeout(forcedCaptureHintTimer)
+    forcedCaptureHintTimer = null
+  }
+
+  document
+    .querySelectorAll(
+      '.forced-capture-alert'
+    )
+    .forEach(piece => {
+      piece.classList.remove(
+        'forced-capture-alert'
+      )
+    })
+}
+
+function showForcedCaptureHint(
+  color,
+  onlyPiece = null,
+  duration = 1050
+) {
+  clearForcedCaptureHint()
+
+  if (gameOver || !color) {
+    return
+  }
+
+  let pieces = []
+
+  if (
+    onlyPiece &&
+    document.body.contains(onlyPiece) &&
+    onlyPiece.dataset.color === color &&
+    getCaptureMoves(onlyPiece).length > 0
+  ) {
+    pieces = [onlyPiece]
+  }
+
+  else {
+    pieces = Array.from(
+      document.querySelectorAll(
+        `.checker-piece[data-color="${color}"]`
+      )
+    ).filter(piece =>
+      getCaptureMoves(piece).length > 0
+    )
+  }
+
+  if (pieces.length === 0) {
+    return
+  }
+
+  pieces.forEach(piece => {
+    piece.classList.add(
+      'forced-capture-alert'
+    )
+  })
+
+  forcedCaptureHintTimer =
+    setTimeout(() => {
+      pieces.forEach(piece => {
+        piece.classList.remove(
+          'forced-capture-alert'
+        )
+      })
+
+      forcedCaptureHintTimer = null
+    }, duration)
+}
+
+// ========================================
 // إزالة علامات الحركة
 // ========================================
 
@@ -8740,6 +9250,8 @@ function finishGame(message) {
     message.includes('فزت') ||
     message.includes('فوز')
 
+  playResultSound(playerWon)
+
   recordGameResult(playerWon)
 
   const winChance =
@@ -8791,10 +9303,24 @@ function finishGame(message) {
 
   chance.className = 'win-chance'
 
-  chance.innerHTML = `
-    <span>احتمالية فوزك</span>
-    <strong>${winChance}%</strong>
-  `
+  if (onlineMode) {
+    const changeText =
+      lastRatingChange > 0
+        ? `+${lastRatingChange}`
+        : `${lastRatingChange}`
+
+    chance.innerHTML = `
+      <span>تصنيفك • ${changeText}</span>
+      <strong>${getPlayerRating()}</strong>
+    `
+  }
+
+  else {
+    chance.innerHTML = `
+      <span>احتمالية فوزك</span>
+      <strong>${winChance}%</strong>
+    `
+  }
 
   const buttons =
     document.createElement('div')
