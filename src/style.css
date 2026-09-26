@@ -2156,15 +2156,18 @@ button {
 
   position: absolute;
   inset: 0;
+  width: auto;
+height: auto;
+transform: none;
 
   background:
     linear-gradient(
       rgba(0, 0, 0, 0.45),
       rgba(0, 0, 0, 0.45)
     ),
-    url("/public/dama-bg.jpg.jpg");
+    url('/dama-bg.jpg');
 
-  background-size: cover;
+  background-size: 90% auto;
   background-position: center;
   background-repeat: no-repeat;
 
@@ -2262,5 +2265,1012 @@ button {
     width: 36px;
     height: 36px;
     flex-basis: 36px;
+  }
+}
+/* =========================================================
+   DamaGame — Modern profile / auth / online UI patch
+   الصق هذا الملف في نهاية style.css
+   ========================================================= */
+
+/* ---------- إحصائيات نوع اللعب ---------- */
+
+.level-stats-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.level-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.profile-section-kicker {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: rgba(255, 244, 225, .58);
+}
+
+.level-section-head h3 {
+  margin: 0;
+}
+
+.level-stat-row {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 68px;
+  padding: 13px 15px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .065);
+  border: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.level-stat-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.level-stat-main strong {
+  color: #fff7eb;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.level-stat-main small {
+  color: rgba(255, 247, 235, .58);
+  font-size: 11px;
+}
+
+.level-results {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.level-results span {
+  min-width: 58px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  text-align: center;
+  white-space: nowrap;
+  color: #fff8ed;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, .085);
+  border: 1px solid rgba(255, 255, 255, .055);
+}
+
+.impossible-row {
+  margin-top: 0;
+  background:
+    linear-gradient(135deg, rgba(48, 27, 19, .46), rgba(78, 42, 27, .22));
+  border-color: rgba(255, 255, 255, .09);
+}
+
+.online-row {
+  width: 100%;
+  min-height: 78px;
+  margin-top: 5px;
+  padding: 15px 17px;
+  border-radius: 17px;
+  background:
+    linear-gradient(135deg, rgba(141, 82, 48, .34), rgba(64, 35, 23, .50));
+  border: 1px solid rgba(239, 211, 172, .18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .06),
+    0 9px 24px rgba(0, 0, 0, .10);
+}
+
+.online-stat-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 11px;
+}
+
+.online-stat-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .10);
+  border: 1px solid rgba(255, 255, 255, .08);
+  font-size: 17px;
+}
+
+.online-results span {
+  min-width: 64px;
+  padding: 8px 10px;
+  background: rgba(255, 248, 237, .10);
+}
+
+
+/* ---------- رأس قسم الحساب ---------- */
+
+.account-section {
+  overflow: hidden;
+}
+
+.account-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.account-section-head h3 {
+  margin: 2px 0 0;
+}
+
+.account-eyebrow {
+  display: block;
+  color: rgba(255, 244, 225, .56);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.account-head-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .08);
+}
+
+
+/* ---------- شاشة الزائر ---------- */
+
+.guest-account-view {
+  width: 100%;
+}
+
+.account-welcome-card {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 15px;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 225, .10), rgba(255, 255, 255, .045));
+  border: 1px solid rgba(255, 255, 255, .085);
+}
+
+.account-welcome-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #3d281d;
+  background: linear-gradient(180deg, #f5e8cd, #ddc69f);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .14);
+  font-size: 21px;
+}
+
+.account-welcome-copy {
+  min-width: 0;
+}
+
+.account-welcome-copy strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #fff8ee;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.account-welcome-copy small {
+  display: block;
+  max-width: 380px;
+  color: rgba(255, 248, 238, .64);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.account-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.account-choice-btn {
+  appearance: none;
+  width: 100%;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 40px 1fr 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 15px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: right;
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease;
+}
+
+.account-choice-btn:hover {
+  transform: translateY(-2px);
+}
+
+.account-login-choice {
+  color: #3b271d;
+  background: linear-gradient(180deg, #f5e8ce, #e4cfa9);
+  border: 1px solid rgba(255, 255, 255, .35);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .13);
+}
+
+.account-register-choice {
+  color: #fff8ee;
+  background: rgba(255, 255, 255, .065);
+  border: 1px solid rgba(255, 255, 255, .11);
+}
+
+.account-choice-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 18px;
+  font-weight: 900;
+  background: rgba(76, 45, 28, .10);
+}
+
+.account-register-choice .account-choice-icon {
+  background: rgba(255, 255, 255, .08);
+}
+
+.account-choice-copy {
+  min-width: 0;
+}
+
+.account-choice-copy strong,
+.account-choice-copy small {
+  display: block;
+}
+
+.account-choice-copy strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.account-choice-copy small {
+  margin-top: 3px;
+  opacity: .65;
+  font-size: 10px;
+}
+
+.account-choice-arrow {
+  font-size: 17px;
+  opacity: .66;
+}
+
+
+/* ---------- تسجيل الدخول / إنشاء الحساب ---------- */
+
+.auth-modern-card {
+  padding: 4px 0 0;
+}
+
+.auth-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: rgba(255, 248, 238, .72);
+  background: rgba(255, 255, 255, .055);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.auth-modern-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 17px;
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 225, .10), rgba(255, 255, 255, .035));
+  border: 1px solid rgba(255, 255, 255, .075);
+}
+
+.auth-modern-icon {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #422c20;
+  background: linear-gradient(180deg, #f3e6cb, #dfc79f);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.auth-modern-head h4 {
+  margin: 0 0 3px;
+  color: #fff8ed;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.auth-modern-head p {
+  margin: 0;
+  color: rgba(255, 248, 237, .58);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.auth-field {
+  display: block;
+  margin-bottom: 11px;
+}
+
+.auth-field-label {
+  display: block;
+  margin: 0 3px 6px;
+  color: rgba(255, 248, 238, .66);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.auth-input-wrap {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 13px;
+  background: rgba(15, 9, 6, .20);
+  border: 1px solid rgba(255, 255, 255, .095);
+  transition:
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease;
+}
+
+.auth-input-wrap:focus-within {
+  background: rgba(15, 9, 6, .28);
+  border-color: rgba(239, 214, 178, .38);
+  box-shadow: 0 0 0 3px rgba(225, 194, 148, .07);
+}
+
+.auth-input-icon {
+  width: 25px;
+  text-align: center;
+  color: rgba(245, 225, 194, .70);
+  font-size: 14px;
+}
+
+.auth-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: #fff8ee !important;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.auth-input-wrap input::placeholder {
+  color: rgba(255, 248, 238, .32);
+}
+
+.auth-submit-btn {
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 14px;
+  color: #3c281d;
+  background: linear-gradient(180deg, #f7ead0, #dfc69d);
+  box-shadow: 0 11px 24px rgba(0, 0, 0, .15);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform .18s ease,
+    box-shadow .18s ease;
+}
+
+.auth-submit-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 13px 27px rgba(0, 0, 0, .18);
+}
+
+.auth-submit-arrow {
+  font-size: 17px;
+}
+
+.auth-message {
+  min-height: 20px;
+  margin: 9px 0 0;
+  text-align: center;
+  color: #f2d9b4;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+
+/* ---------- حالة الحساب المسجل ---------- */
+
+.logged-account-view {
+  width: 100%;
+}
+
+.account-signed-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 225, .105), rgba(255, 255, 255, .045));
+  border: 1px solid rgba(255, 255, 255, .08);
+}
+
+.account-signed-avatar {
+  width: 45px;
+  height: 45px;
+  flex: 0 0 45px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #432c20;
+  background: linear-gradient(180deg, #f4e7cb, #ddc49a);
+  font-weight: 950;
+}
+
+.account-signed-copy {
+  min-width: 0;
+}
+
+.account-signed-label {
+  display: block;
+  margin-bottom: 2px;
+  color: rgba(255, 248, 237, .48);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.account-signed-copy strong,
+.account-signed-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-signed-copy strong {
+  color: #fff8ed;
+  font-size: 13px;
+}
+
+.account-signed-copy small {
+  margin-top: 2px;
+  max-width: 260px;
+  color: rgba(255, 248, 237, .56);
+  font-size: 10px;
+  direction: ltr;
+  text-align: right;
+}
+
+.logout-account-btn {
+  width: 100%;
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 0 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 139, 124, .15);
+  color: #ffd8d1;
+  background: rgba(132, 48, 38, .14);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+
+/* ---------- قائمة الأونلاين ---------- */
+
+.online-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.modern-back-btn {
+  position: static !important;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.online-modal-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: rgba(255, 247, 235, .76);
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .08);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.online-modal-copy {
+  margin-bottom: 13px;
+}
+
+.online-modal-copy h2,
+.join-room-modern-copy h2 {
+  margin: 0 0 5px;
+  color: #fff8ed;
+  font-size: 21px;
+  font-weight: 950;
+}
+
+.online-modal-copy .modal-description,
+.join-room-modern-copy .modal-description {
+  margin: 0;
+  color: rgba(255, 248, 237, .55);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.online-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.online-choice-card {
+  width: 100%;
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 44px 1fr 22px;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  text-align: right;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    background .18s ease;
+}
+
+.online-choice-card:hover {
+  transform: translateY(-2px);
+}
+
+.create-room-card {
+  color: #3c291e;
+  background: linear-gradient(180deg, #f5e8cd, #dfc69e);
+  border: 1px solid rgba(255, 255, 255, .36);
+}
+
+.join-room-card {
+  color: #fff8ed;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .105);
+}
+
+.online-choice-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(62, 38, 25, .11);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.join-room-card .online-choice-icon {
+  background: rgba(255, 255, 255, .075);
+}
+
+.online-choice-copy strong,
+.online-choice-copy small {
+  display: block;
+}
+
+.online-choice-copy strong {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.online-choice-copy small {
+  margin-top: 4px;
+  opacity: .62;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.online-choice-arrow {
+  opacity: .65;
+  font-size: 17px;
+}
+
+
+/* ---------- إدخال كود الروم ---------- */
+
+.join-room-modern {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+}
+
+.join-room-modern-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin: 2px auto 12px;
+  border-radius: 18px;
+  color: #432c1f;
+  background: linear-gradient(180deg, #f5e8ce, #ddc49a);
+  box-shadow: 0 11px 26px rgba(0, 0, 0, .15);
+  font-size: 25px;
+  font-weight: 950;
+}
+
+.join-room-modern-copy {
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.room-code-field {
+  display: block;
+}
+
+.room-code-field-label {
+  display: block;
+  margin: 0 3px 7px;
+  color: rgba(255, 248, 237, .62);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.room-code-input-wrap {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border-radius: 16px;
+  background: rgba(15, 9, 6, .24);
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease;
+}
+
+.room-code-input-wrap:focus-within {
+  border-color: rgba(235, 210, 173, .40);
+  box-shadow: 0 0 0 3px rgba(225, 194, 148, .07);
+}
+
+.room-code-prefix {
+  color: rgba(239, 215, 181, .58);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.room-code-input-wrap .room-code-input {
+  flex: 1;
+  min-width: 0;
+  height: 58px;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: #fff8ed !important;
+  text-align: center;
+  direction: ltr;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: .28em;
+}
+
+.room-code-input-wrap .room-code-input::placeholder {
+  color: rgba(255, 248, 237, .20);
+}
+
+.room-code-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 7px 4px 13px;
+  color: rgba(255, 248, 237, .43);
+  font-size: 9px;
+}
+
+.room-code-help span {
+  color: #d8bd92;
+  font-size: 7px;
+}
+
+.join-room-submit-btn {
+  width: 100%;
+  min-height: 51px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 14px;
+  color: #3c281d;
+  background: linear-gradient(180deg, #f7ead0, #dfc69d);
+  box-shadow: 0 11px 24px rgba(0, 0, 0, .15);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.join-room-submit-arrow {
+  font-size: 17px;
+}
+
+.join-room-error {
+  min-height: 19px;
+  margin: 8px 0 0;
+  text-align: center;
+  color: #ffb5aa;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+
+/* ---------- الجوال ---------- */
+
+@media (max-width: 700px) {
+  .account-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-choice-btn {
+    min-height: 66px;
+  }
+
+  .account-welcome-card {
+    align-items: flex-start;
+  }
+
+  .level-stat-row {
+    min-height: 64px;
+    padding: 12px 13px;
+  }
+
+  .level-results {
+    gap: 5px;
+  }
+
+  .level-results span {
+    min-width: 52px;
+    padding: 6px 7px;
+    font-size: 10px;
+  }
+
+  .online-row {
+    min-height: 74px;
+    padding: 13px 14px;
+  }
+
+  .online-stat-icon {
+    width: 35px;
+    height: 35px;
+    flex-basis: 35px;
+  }
+
+  .online-choice-card {
+    min-height: 72px;
+  }
+
+  .join-room-modern-icon {
+    width: 54px;
+    height: 54px;
+  }
+
+  .room-code-input-wrap .room-code-input {
+    font-size: 23px;
+    letter-spacing: .22em;
+  }
+}
+/* ========================================
+   🪵 مربعات خشب بعروق واضحة
+   ======================================== */
+
+/* البلوط */
+.light-square {
+  background:
+    repeating-linear-gradient(
+      7deg,
+      rgba(105, 72, 38, 0.08) 0px,
+      rgba(105, 72, 38, 0.08) 1px,
+      transparent 1px,
+      transparent 7px
+    ),
+    repeating-linear-gradient(
+      94deg,
+      rgba(255, 255, 255, 0.06) 0px,
+      transparent 2px,
+      transparent 13px
+    ),
+    linear-gradient(
+      135deg,
+      #d8bc8b,
+      #c5a270 55%,
+      #b68e5a
+    ) !important;
+}
+
+
+/* الجوز */
+.dark-square {
+  background:
+    repeating-linear-gradient(
+      8deg,
+      rgba(20, 10, 5, 0.20) 0px,
+      rgba(20, 10, 5, 0.20) 1px,
+      transparent 1px,
+      transparent 8px
+    ),
+    repeating-linear-gradient(
+      96deg,
+      rgba(255, 255, 255, 0.035) 0px,
+      transparent 2px,
+      transparent 14px
+    ),
+    linear-gradient(
+      135deg,
+      #684328,
+      #4d301d 55%,
+      #382116
+    ) !important;
+}
+
+
+/* لمعة بسيطة على الخشب */
+.square {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    inset 0 -1px 0 rgba(0,0,0,.10);
+}
+
+
+/* ========================================
+   قطعة الدامة - نفس الشكل، فقط بروز
+   ======================================== */
+
+.checker-piece {
+  filter:
+    drop-shadow(0 5px 4px rgba(0,0,0,.38));
+
+  box-shadow:
+    inset 0 2px 3px rgba(255,255,255,.18),
+    inset 0 -3px 5px rgba(0,0,0,.20),
+    0 4px 7px rgba(0,0,0,.35) !important;
+}
+/* =========================
+   انتظار لاعب الأونلاين
+========================= */
+
+.waiting-label {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #f3e9d2;
+}
+
+.waiting-room-code {
+  margin-right: 8px;
+
+  font-family:
+    'Courier New',
+    monospace;
+
+  font-size: 22px;
+  font-weight: 800;
+
+  letter-spacing: 3px;
+
+  color: #d8b98a;
+
+  text-shadow:
+    0 2px 8px
+    rgba(0,0,0,.35);
+}
+/* =========================
+   خلفية الرئيسية للجوال
+========================= */
+
+@media (max-width: 650px) {
+
+  .home {
+    position: relative;
+    overflow: hidden;
+    min-height: 100svh;
+    padding: 24px 16px;
+  }
+
+  .home::before {
+    content: "";
+    position: absolute;
+
+    inset: 0;
+
+    background-image: url('/dama-bg.jpg');
+    background-repeat: no-repeat;
+
+    /* يخلي الخلفية كاملة وموزونة على الجوال */
+    background-size: auto 100%;
+    background-position: center center;
+
+    opacity: 1;
+
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .home > * {
+    position: relative;
+    z-index: 1;
   }
 }

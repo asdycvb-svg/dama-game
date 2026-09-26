@@ -1,5 +1,23 @@
 import './style.css'
 import { io } from 'socket.io-client'
+import { supabase } from './supabase.js'
+const moveSound =
+  new Audio('/move.wav')
+
+moveSound.preload = 'auto'
+moveSound.volume = 0.6
+
+function playMoveSound() {
+  const sound =
+    moveSound.cloneNode()
+
+  sound.volume =
+    moveSound.volume
+
+  sound
+    .play()
+    .catch(() => {})
+}
 
 // ========================================
 // حالة اللعبة
@@ -21,6 +39,7 @@ let onlineRoomCode = null
 let onlinePlayerColor = null
 let onlineMode = false
 let onlineOpponentConnected = false
+
 
 
 // ========================================
@@ -78,6 +97,167 @@ socket.on('connect_error', (error) => {
 
 let selectedPiece = null
 let currentLevel = null
+let currentAuthUser = null
+async function loadCloudProfile(user) {
+
+  const { data, error } =
+    await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle()
+
+  if (error) {
+    console.error(
+      'خطأ في تحميل الإحصائيات:',
+      error
+    )
+
+    return
+  }
+
+  // حساب جديد
+  if (!data) {
+
+    const freshProfile =
+      createDefaultProfile()
+
+    freshProfile.name =
+      user.user_metadata?.name ||
+      'لاعب'
+
+    const { error: insertError } =
+      await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          name: freshProfile.name,
+          games: 0,
+          wins: 0,
+          losses: 0,
+          total_moves: 0,
+          levels: freshProfile.levels,
+          history: []
+        })
+
+    if (insertError) {
+      console.error(
+        'خطأ في إنشاء ملف اللاعب:',
+        insertError
+      )
+
+      return
+    }
+
+    playerProfile = freshProfile
+
+    updateProfileUI()
+
+    return
+  }
+
+  // حساب موجود
+  const defaults =
+    createDefaultProfile()
+
+  playerProfile = {
+    ...defaults,
+
+    name:
+      data.name || 'لاعب',
+
+    games:
+      data.games || 0,
+
+    wins:
+      data.wins || 0,
+
+    losses:
+      data.losses || 0,
+
+    totalMoves:
+      data.total_moves || 0,
+
+    levels: {
+      ...defaults.levels,
+      ...(data.levels || {}),
+
+      progress: {
+        ...defaults.levels.progress,
+        ...(data.levels?.progress || {}),
+
+        xp:
+          data
+            .levels
+            ?.progress
+            ?.xp ??
+          calculateLegacyXpFromLevels(
+            data.levels || {}
+          )
+      }
+    },
+
+    history:
+      Array.isArray(data.history)
+        ? data.history
+        : []
+  }
+
+  if (
+    data
+      .levels
+      ?.progress
+      ?.xp == null
+  ) {
+    await saveCloudProfile()
+  }
+
+  updateProfileUI()
+}
+async function saveCloudProfile() {
+
+  if (!currentAuthUser) {
+    return
+  }
+
+  const { error } =
+    await supabase
+      .from('profiles')
+      .upsert({
+        id: currentAuthUser.id,
+
+        name:
+          playerProfile.name,
+
+        games:
+          playerProfile.games,
+
+        wins:
+          playerProfile.wins,
+
+        losses:
+          playerProfile.losses,
+
+        total_moves:
+          playerProfile.totalMoves,
+
+        levels:
+          playerProfile.levels,
+
+        history:
+          playerProfile.history,
+
+        updated_at:
+          new Date().toISOString()
+      })
+
+  if (error) {
+    console.error(
+      'خطأ في حفظ الإحصائيات:',
+      error
+    )
+  }
+}
 let currentTurn = 'cream'
 let mustContinueCapture = false
 let gameOver = false
@@ -95,6 +275,212 @@ const PROFILE_KEY = 'damagame_profile_v1'
 
 let currentGameMoves = 0
 let currentGameRecorded = false
+let pendingProfileSave =
+  Promise.resolve()
+
+// ========================================
+// ⭐ نظام المستوى و XP
+// ========================================
+
+const MAX_PLAYER_LEVEL = 100
+
+const XP_REWARDS = {
+  easy: {
+    win: 10,
+    loss: 2
+  },
+
+  medium: {
+    win: 20,
+    loss: 4
+  },
+
+  hard: {
+    win: 35,
+    loss: 7
+  },
+
+  impossible: {
+    win: 60,
+    loss: 12
+  },
+
+  online: {
+    win: 40,
+    loss: 8
+  }
+}
+
+function calculateLegacyXpFromLevels(
+  levels = {}
+) {
+  let total = 0
+
+  Object
+    .keys(XP_REWARDS)
+    .forEach(level => {
+      const stats =
+        levels?.[level] || {}
+
+      const wins =
+        Number(stats.wins) || 0
+
+      const losses =
+        Number(stats.losses) || 0
+
+      total +=
+        (wins *
+          XP_REWARDS[level].win) +
+        (losses *
+          XP_REWARDS[level].loss)
+    })
+
+  return Math.max(
+    0,
+    total
+  )
+}
+
+function getLevelRequirement(level) {
+  if (level >= MAX_PLAYER_LEVEL) {
+    return 0
+  }
+
+  return 50 + ((level - 1) * 10)
+}
+
+function getMaxTotalXp() {
+  let total = 0
+
+  for (
+    let level = 1;
+    level < MAX_PLAYER_LEVEL;
+    level++
+  ) {
+    total +=
+      getLevelRequirement(level)
+  }
+
+  return total
+}
+
+function getPlayerTotalXp(
+  profile = playerProfile
+) {
+  const storedXp =
+    profile
+      ?.levels
+      ?.progress
+      ?.xp
+
+  if (storedXp == null) {
+    return Math.max(
+      0,
+      calculateLegacyXpFromLevels(
+        profile?.levels || {}
+      )
+    )
+  }
+
+  return Math.max(
+    0,
+    Number(storedXp) || 0
+  )
+}
+
+function getPlayerLevelState(
+  profile = playerProfile
+) {
+  const totalXp =
+    Math.min(
+      getPlayerTotalXp(profile),
+      getMaxTotalXp()
+    )
+
+  let level = 1
+  let remainingXp =
+    totalXp
+
+  while (
+    level < MAX_PLAYER_LEVEL
+  ) {
+    const needed =
+      getLevelRequirement(level)
+
+    if (remainingXp < needed) {
+      return {
+        level,
+        totalXp,
+        currentXp: remainingXp,
+        nextXp: needed,
+        percent:
+          Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round(
+                (remainingXp / needed) *
+                100
+              )
+            )
+          )
+      }
+    }
+
+    remainingXp -= needed
+    level++
+  }
+
+  return {
+    level: MAX_PLAYER_LEVEL,
+    totalXp,
+    currentXp: 0,
+    nextXp: 0,
+    percent: 100
+  }
+}
+
+function getXpReward(
+  level,
+  playerWon,
+  forfeited = false
+) {
+  if (forfeited) {
+    return 0
+  }
+
+  const reward =
+    XP_REWARDS[level] ||
+    XP_REWARDS.easy
+
+  return playerWon
+    ? reward.win
+    : reward.loss
+}
+
+function addProfileXp(amount) {
+  if (!playerProfile.levels.progress) {
+    playerProfile.levels.progress = {
+      xp: 0
+    }
+  }
+
+  const currentXp =
+    getPlayerTotalXp()
+
+  playerProfile
+    .levels
+    .progress
+    .xp =
+      Math.min(
+        getMaxTotalXp(),
+        currentXp +
+          Math.max(
+            0,
+            Number(amount) || 0
+          )
+      )
+}
 
 
 function createDefaultProfile() {
@@ -126,10 +512,20 @@ function createDefaultProfile() {
       },
 
       impossible: {
-        played: 0,
-        wins: 0,
-        losses: 0
-      }
+  played: 0,
+  wins: 0,
+  losses: 0
+},
+
+online: {
+  played: 0,
+  wins: 0,
+  losses: 0
+},
+
+progress: {
+  xp: 0
+}
     },
 
     history: []
@@ -177,6 +573,25 @@ function loadProfile() {
         impossible: {
           ...defaultProfile.levels.impossible,
           ...(data.levels?.impossible || {})
+        },
+
+        online: {
+          ...defaultProfile.levels.online,
+          ...(data.levels?.online || {})
+        },
+
+        progress: {
+          ...defaultProfile.levels.progress,
+          ...(data.levels?.progress || {}),
+
+          xp:
+            data
+              .levels
+              ?.progress
+              ?.xp ??
+            calculateLegacyXpFromLevels(
+              data.levels || {}
+            )
         }
       },
 
@@ -203,10 +618,22 @@ let playerProfile =
 
 
 function saveProfile() {
+
+  // مسجل دخول
+  if (currentAuthUser) {
+    pendingProfileSave =
+      saveCloudProfile()
+
+    return pendingProfileSave
+  }
+
+  // زائر
   localStorage.setItem(
     PROFILE_KEY,
     JSON.stringify(playerProfile)
   )
+
+  return Promise.resolve()
 }
 
 
@@ -234,17 +661,21 @@ function savePlayerName(name) {
 // ========================================
 
 function recordGameResult(
-  playerWon
+  playerWon,
+  options = {}
 ) {
   // يمنع تسجيل نفس المباراة مرتين
   if (currentGameRecorded) {
-    return
+    return Promise.resolve()
   }
 
   currentGameRecorded = true
 
   const level =
     currentLevel || 'easy'
+
+  const forfeited =
+    options.forfeited === true
 
   if (!playerProfile.levels[level]) {
     playerProfile.levels[level] = {
@@ -278,6 +709,15 @@ function recordGameResult(
       .losses++
   }
 
+  const xpGained =
+    getXpReward(
+      level,
+      playerWon,
+      forfeited
+    )
+
+  addProfileXp(xpGained)
+
   // ========================================
   // سجل آخر المباريات
   // ========================================
@@ -293,6 +733,11 @@ function recordGameResult(
     moves:
       currentGameMoves,
 
+    xp:
+      xpGained,
+
+    forfeited,
+
     date:
       new Date()
         .toLocaleString(
@@ -307,14 +752,350 @@ function recordGameResult(
       20
     )
 
-  saveProfile()
+  return saveProfile()
 }
+
+// ========================================
+// تنسيق المستوى ولوحة الصدارة
+// ========================================
+
+function ensureProgressionStyles() {
+  if (
+    document.querySelector(
+      '#progressionStyles'
+    )
+  ) {
+    return
+  }
+
+  const style =
+    document.createElement('style')
+
+  style.id =
+    'progressionStyles'
+
+  style.textContent = `
+    .player-level-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 48px;
+      height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #f7e9d2;
+      background: rgba(97, 55, 30, 0.72);
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+      white-space: nowrap;
+    }
+
+    .profile-name-level-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .profile-name-level-row h2 {
+      margin: 0;
+    }
+
+    .profile-page-level-badge {
+      transform: translateY(1px);
+    }
+
+    .profile-xp-box {
+      width: min(320px, 86vw);
+      margin: 12px auto 0;
+    }
+
+    .profile-xp-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      font-size: 11px;
+      color: rgba(255,255,255,.72);
+    }
+
+    .profile-xp-track {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(0,0,0,.22);
+      border: 1px solid rgba(255,255,255,.07);
+    }
+
+    .profile-xp-fill {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(
+        90deg,
+        #b88652,
+        #e6c08d
+      );
+      transition: width .25s ease;
+    }
+
+    .leaderboard-view {
+      width: min(760px, 94vw);
+      margin: 0 auto;
+    }
+
+    .leaderboard-main {
+      width: 100%;
+    }
+
+    .leaderboard-note {
+      width: fit-content;
+      margin: 0 auto 14px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: rgba(255,255,255,.72);
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .leaderboard-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .leaderboard-loading,
+    .leaderboard-empty {
+      padding: 26px 16px;
+      text-align: center;
+      color: rgba(255,255,255,.68);
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 16px;
+    }
+
+    .leaderboard-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 58px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 16px;
+      background: linear-gradient(
+        135deg,
+        rgba(255,255,255,.075),
+        rgba(255,255,255,.035)
+      );
+      color: #fff;
+      text-align: right;
+      cursor: pointer;
+      transition:
+        transform .15s ease,
+        border-color .15s ease,
+        background .15s ease;
+    }
+
+    .leaderboard-row:hover {
+      transform: translateY(-1px);
+      border-color: rgba(229, 193, 145, .30);
+      background: linear-gradient(
+        135deg,
+        rgba(255,255,255,.10),
+        rgba(255,255,255,.045)
+      );
+    }
+
+    .leaderboard-rank {
+      font-size: 18px;
+      text-align: center;
+      font-weight: 900;
+    }
+
+    .leaderboard-player-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .leaderboard-player-copy strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+
+    .leaderboard-player-copy small {
+      color: rgba(255,255,255,.60);
+      font-size: 11px;
+    }
+
+    .leaderboard-points {
+      min-width: 62px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(184, 134, 82, .14);
+      border: 1px solid rgba(229, 193, 145, .15);
+    }
+
+    .leaderboard-points strong {
+      font-size: 16px;
+    }
+
+    .leaderboard-points small {
+      font-size: 10px;
+      color: rgba(255,255,255,.62);
+    }
+
+    .public-player-view {
+      width: 100%;
+    }
+
+    .public-profile-back-btn {
+      margin-bottom: 12px;
+    }
+
+    .public-profile-card {
+      padding: 20px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.09);
+      background: linear-gradient(
+        145deg,
+        rgba(255,255,255,.075),
+        rgba(255,255,255,.03)
+      );
+    }
+
+    .public-profile-avatar {
+      width: 58px;
+      height: 58px;
+      margin: 0 auto 10px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      font-size: 25px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.10);
+    }
+
+    .public-profile-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .public-profile-name-row h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    .public-profile-xp {
+      width: min(340px, 100%);
+      margin: 14px auto 18px;
+    }
+
+    .public-profile-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .public-profile-stats > div {
+      padding: 12px 8px;
+      text-align: center;
+      border-radius: 13px;
+      background: rgba(255,255,255,.055);
+      border: 1px solid rgba(255,255,255,.07);
+    }
+
+    .public-profile-stats span {
+      display: block;
+      margin-bottom: 5px;
+      color: rgba(255,255,255,.60);
+      font-size: 10px;
+    }
+
+    .public-profile-stats strong {
+      font-size: 17px;
+    }
+
+    .public-level-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .public-level-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 13px;
+      border-radius: 13px;
+      background: rgba(255,255,255,.045);
+      border: 1px solid rgba(255,255,255,.065);
+    }
+
+    .public-level-row > div:first-child {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .public-level-row small {
+      color: rgba(255,255,255,.55);
+      font-size: 10px;
+    }
+
+    .public-level-row > div:last-child {
+      display: flex;
+      gap: 6px;
+      font-size: 11px;
+      color: rgba(255,255,255,.72);
+    }
+
+    @media (max-width: 620px) {
+      .leaderboard-row {
+        grid-template-columns: 44px 1fr auto;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .leaderboard-points {
+        min-width: 52px;
+        padding: 7px 8px;
+      }
+
+      .public-profile-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  `
+
+  document.head.appendChild(style)
+}
+
 
 // ========================================
 // الصفحة الرئيسية
 // ========================================
 
 function showHome() {
+  ensureProgressionStyles()
   stopImpossibleWorker()
 
   if (onlineMode) {
@@ -333,6 +1114,12 @@ function showHome() {
       <button id="profileBtn" class="profile-top-btn">
         <span class="profile-top-icon">👤</span>
         <span id="profileButtonName">لاعب</span>
+        <span
+          id="profileLevelBadge"
+          class="player-level-badge"
+        >
+          Lv.1
+        </span>
       </button>
 
 
@@ -355,7 +1142,10 @@ function showHome() {
             لعبة جديدة
           </button>
 
-          <button class="secondary-btn">
+          <button
+            id="leaderboardBtn"
+            class="secondary-btn"
+          >
             ♛ لوحة الصدارة
           </button>
         </div>
@@ -388,17 +1178,324 @@ function showHome() {
               👤
             </div>
 
-            <h2 id="profilePageName">
-              لاعب
-            </h2>
+            <div class="profile-name-level-row">
+              <h2 id="profilePageName">
+                لاعب
+              </h2>
+
+              <span
+                id="profilePageLevelBadge"
+                class="player-level-badge profile-page-level-badge"
+              >
+                Lv.1
+              </span>
+            </div>
 
             <p>
               إحصائياتك في الدامة
             </p>
+
+            <div class="profile-xp-box">
+              <div class="profile-xp-head">
+                <span id="profileXpText">
+                  0 / 50 XP
+                </span>
+
+                <span id="profileXpTotal">
+                  0 XP
+                </span>
+              </div>
+
+              <div class="profile-xp-track">
+                <span
+                  id="profileXpFill"
+                  class="profile-xp-fill"
+                ></span>
+              </div>
+            </div>
           </div>
         </div>
 
+<!-- ========================================
+     الحساب
+     ======================================== -->
 
+<div class="profile-section account-section">
+
+  <div class="account-section-head">
+    <div>
+      <span class="account-eyebrow">حساب اللاعب</span>
+      <h3>الحساب</h3>
+    </div>
+
+    <div class="account-head-icon">👤</div>
+  </div>
+
+  <!-- الزائر -->
+  <div id="guestAccountView" class="guest-account-view">
+
+    <div class="account-welcome-card">
+      <div class="account-welcome-icon">♛</div>
+
+      <div class="account-welcome-copy">
+        <strong>احفظ تقدمك وإحصائياتك</strong>
+        <small>
+          سجّل دخولك أو أنشئ حسابًا، وترجع بياناتك لك من أي جهاز.
+        </small>
+      </div>
+    </div>
+
+    <div class="account-choice-grid">
+
+      <button
+        id="openLoginBtn"
+        class="account-choice-btn account-login-choice"
+        type="button"
+      >
+        <span class="account-choice-icon">↪</span>
+
+        <span class="account-choice-copy">
+          <strong>تسجيل الدخول</strong>
+          <small>عندي حساب</small>
+        </span>
+
+        <span class="account-choice-arrow">←</span>
+      </button>
+
+      <button
+        id="openRegisterBtn"
+        class="account-choice-btn account-register-choice"
+        type="button"
+      >
+        <span class="account-choice-icon">＋</span>
+
+        <span class="account-choice-copy">
+          <strong>إنشاء حساب</strong>
+          <small>حساب جديد</small>
+        </span>
+
+        <span class="account-choice-arrow">←</span>
+      </button>
+
+    </div>
+
+  </div>
+
+
+  <!-- تسجيل الدخول -->
+  <div
+    id="loginAccountView"
+    class="auth-form-view auth-modern-card"
+    hidden
+  >
+
+    <button
+      id="backFromLoginBtn"
+      class="auth-back-btn"
+      type="button"
+    >
+      <span>→</span>
+      رجوع
+    </button>
+
+    <div class="auth-modern-head">
+      <div class="auth-modern-icon">↪</div>
+
+      <div>
+        <h4>تسجيل الدخول</h4>
+        <p>أدخل حسابك للمتابعة من حيث توقفت.</p>
+      </div>
+    </div>
+
+    <label class="auth-field">
+      <span class="auth-field-label">البريد الإلكتروني</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">✉</span>
+
+        <input
+          id="loginEmail"
+          type="email"
+          placeholder="name@example.com"
+          autocomplete="email"
+        >
+      </span>
+    </label>
+
+    <label class="auth-field">
+      <span class="auth-field-label">كلمة المرور</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">⌁</span>
+
+        <input
+          id="loginPassword"
+          type="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+        >
+      </span>
+    </label>
+
+    <button
+      id="loginSubmitBtn"
+      class="auth-submit-btn"
+      type="button"
+    >
+      <span>دخول إلى الحساب</span>
+      <span class="auth-submit-arrow">←</span>
+    </button>
+
+    <p
+      id="loginMessage"
+      class="auth-message"
+    ></p>
+
+  </div>
+
+
+  <!-- إنشاء حساب -->
+  <div
+    id="registerAccountView"
+    class="auth-form-view auth-modern-card"
+    hidden
+  >
+
+    <button
+      id="backFromRegisterBtn"
+      class="auth-back-btn"
+      type="button"
+    >
+      <span>→</span>
+      رجوع
+    </button>
+
+    <div class="auth-modern-head">
+      <div class="auth-modern-icon">＋</div>
+
+      <div>
+        <h4>إنشاء حساب</h4>
+        <p>أنشئ حسابك واحفظ سجل مبارياتك وإحصائياتك.</p>
+      </div>
+    </div>
+
+    <label class="auth-field">
+      <span class="auth-field-label">اسم اللاعب</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">♟</span>
+
+        <input
+          id="registerName"
+          type="text"
+          maxlength="20"
+          placeholder="اسمك داخل اللعبة"
+          autocomplete="nickname"
+        >
+      </span>
+    </label>
+
+    <label class="auth-field">
+      <span class="auth-field-label">البريد الإلكتروني</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">✉</span>
+
+        <input
+          id="registerEmail"
+          type="email"
+          placeholder="name@example.com"
+          autocomplete="email"
+        >
+      </span>
+    </label>
+
+    <label class="auth-field">
+      <span class="auth-field-label">كلمة المرور</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">⌁</span>
+
+        <input
+          id="registerPassword"
+          type="password"
+          placeholder="6 أحرف على الأقل"
+          autocomplete="new-password"
+        >
+      </span>
+    </label>
+
+    <label class="auth-field">
+      <span class="auth-field-label">تأكيد كلمة المرور</span>
+
+      <span class="auth-input-wrap">
+        <span class="auth-input-icon">✓</span>
+
+        <input
+          id="registerPasswordConfirm"
+          type="password"
+          placeholder="أعد كتابة كلمة المرور"
+          autocomplete="new-password"
+        >
+      </span>
+    </label>
+
+    <button
+      id="registerSubmitBtn"
+      class="auth-submit-btn"
+      type="button"
+    >
+      <span>إنشاء الحساب</span>
+      <span class="auth-submit-arrow">←</span>
+    </button>
+
+    <p
+      id="registerMessage"
+      class="auth-message"
+    ></p>
+
+  </div>
+
+
+  <!-- الحساب بعد تسجيل الدخول -->
+  <div
+    id="loggedAccountView"
+    class="logged-account-view"
+    hidden
+  >
+
+    <div class="account-signed-card">
+
+      <div class="account-signed-avatar">
+        ✓
+      </div>
+
+      <div class="account-signed-copy">
+        <span class="account-signed-label">مسجل الدخول</span>
+
+        <strong id="loggedAccountName">
+          لاعب
+        </strong>
+
+        <small id="loggedAccountEmail">
+          example@email.com
+        </small>
+      </div>
+
+    </div>
+
+    <button
+      id="logoutAccountBtn"
+      class="logout-account-btn"
+      type="button"
+    >
+      <span>تسجيل الخروج</span>
+      <span>↗</span>
+    </button>
+
+  </div>
+
+</div>
         <!-- تعديل الاسم -->
 
         <div class="profile-section">
@@ -472,92 +1569,80 @@ function showHome() {
 
         <div class="profile-section">
 
-          <h3>
-            حسب مستوى الصعوبة
-          </h3>
+          <div class="level-section-head">
+            <div>
+              <span class="profile-section-kicker">أداؤك</span>
+
+              <h3>
+                حسب نوع اللعب
+              </h3>
+            </div>
+          </div>
 
           <div class="level-stats-list">
 
             <div class="level-stat-row">
-              <div>
+              <div class="level-stat-main">
                 <strong>سهل</strong>
-                <small id="easyPlayed">
-                  0 مباراة
-                </small>
+                <small id="easyPlayed">0 مباراة</small>
               </div>
 
               <div class="level-results">
-                <span id="easyWins">
-                  0 فوز
-                </span>
-
-                <span id="easyLosses">
-                  0 خسارة
-                </span>
+                <span id="easyWins">0 فوز</span>
+                <span id="easyLosses">0 خسارة</span>
               </div>
             </div>
 
-
             <div class="level-stat-row">
-              <div>
+              <div class="level-stat-main">
                 <strong>متوسط</strong>
-                <small id="mediumPlayed">
-                  0 مباراة
-                </small>
+                <small id="mediumPlayed">0 مباراة</small>
               </div>
 
               <div class="level-results">
-                <span id="mediumWins">
-                  0 فوز
-                </span>
-
-                <span id="mediumLosses">
-                  0 خسارة
-                </span>
+                <span id="mediumWins">0 فوز</span>
+                <span id="mediumLosses">0 خسارة</span>
               </div>
             </div>
-
 
             <div class="level-stat-row">
-              <div>
+              <div class="level-stat-main">
                 <strong>صعب</strong>
-                <small id="hardPlayed">
-                  0 مباراة
-                </small>
+                <small id="hardPlayed">0 مباراة</small>
               </div>
 
               <div class="level-results">
-                <span id="hardWins">
-                  0 فوز
-                </span>
-
-                <span id="hardLosses">
-                  0 خسارة
-                </span>
+                <span id="hardWins">0 فوز</span>
+                <span id="hardLosses">0 خسارة</span>
               </div>
             </div>
-
 
             <div class="level-stat-row impossible-row">
-
-              <div>
-                <strong>
-                  ☠️ أتحداك تفوز
-                </strong>
-
-                <small id="impossiblePlayed">
-                  0 مباراة
-                </small>
+              <div class="level-stat-main">
+                <strong>☠️ أتحداك تفوز</strong>
+                <small id="impossiblePlayed">0 مباراة</small>
               </div>
 
               <div class="level-results">
-                <span id="impossibleWins">
-                  0 فوز
-                </span>
+                <span id="impossibleWins">0 فوز</span>
+                <span id="impossibleLosses">0 خسارة</span>
+              </div>
+            </div>
 
-                <span id="impossibleLosses">
-                  0 خسارة
-                </span>
+            <div class="level-stat-row online-row">
+
+              <div class="level-stat-main online-stat-main">
+                <span class="online-stat-icon">🌐</span>
+
+                <div>
+                  <strong>أونلاين</strong>
+                  <small id="onlinePlayed">0 مباراة</small>
+                </div>
+              </div>
+
+              <div class="level-results online-results">
+                <span id="onlineWins">0 فوز</span>
+                <span id="onlineLosses">0 خسارة</span>
               </div>
 
             </div>
@@ -580,6 +1665,64 @@ function showHome() {
 
         </div>
 
+      </section>
+
+      <!-- ========================================
+           لوحة الصدارة
+           ======================================== -->
+
+      <section
+        id="leaderboardView"
+        class="profile-view leaderboard-view"
+        hidden
+      >
+        <div class="profile-page-header leaderboard-page-header">
+          <button
+            id="leaderboardBackBtn"
+            class="profile-back-btn"
+            type="button"
+          >
+            ← رجوع
+          </button>
+
+          <div>
+            <div class="profile-big-avatar">
+              ♛
+            </div>
+
+            <h2>
+              لوحة الصدارة
+            </h2>
+
+            <p>
+              الترتيب حسب عدد الانتصارات
+            </p>
+          </div>
+        </div>
+
+        <div
+          id="leaderboardMain"
+          class="leaderboard-main"
+        >
+          <div class="leaderboard-note">
+            كل فوز = نقطة واحدة
+          </div>
+
+          <div
+            id="leaderboardList"
+            class="leaderboard-list"
+          >
+            <div class="leaderboard-loading">
+              جاري تحميل اللاعبين...
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="publicPlayerView"
+          class="public-player-view"
+          hidden
+        ></div>
       </section>
 
     </main>
@@ -663,8 +1806,76 @@ function showHome() {
   `
 
   setupHomeEvents()
+updateProfileUI()
+refreshAuthUI()
+  // ========================================
+// واجهة تسجيل الدخول وإنشاء الحساب
+// ========================================
 
-  updateProfileUI()
+const guestAccountView =
+  document.querySelector(
+    '#guestAccountView'
+  )
+
+const loginAccountView =
+  document.querySelector(
+    '#loginAccountView'
+  )
+
+const registerAccountView =
+  document.querySelector(
+    '#registerAccountView'
+  )
+
+
+document
+  .querySelector('#openLoginBtn')
+  ?.addEventListener(
+    'click',
+    () => {
+
+      guestAccountView.hidden = true
+      registerAccountView.hidden = true
+      loginAccountView.hidden = false
+    }
+  )
+
+
+document
+  .querySelector('#openRegisterBtn')
+  ?.addEventListener(
+    'click',
+    () => {
+
+      guestAccountView.hidden = true
+      loginAccountView.hidden = true
+      registerAccountView.hidden = false
+    }
+  )
+
+
+document
+  .querySelector('#backFromLoginBtn')
+  ?.addEventListener(
+    'click',
+    () => {
+
+      loginAccountView.hidden = true
+      guestAccountView.hidden = false
+    }
+  )
+
+
+document
+  .querySelector('#backFromRegisterBtn')
+  ?.addEventListener(
+    'click',
+    () => {
+
+      registerAccountView.hidden = true
+      guestAccountView.hidden = false
+    }
+  )
 }
 
 // ========================================
@@ -704,6 +1915,65 @@ function updateProfileUI() {
   if (nameInput) {
     nameInput.value =
       playerProfile.name
+  }
+
+  const levelState =
+    getPlayerLevelState()
+
+  const levelBadge =
+    document.querySelector(
+      '#profileLevelBadge'
+    )
+
+  const pageLevelBadge =
+    document.querySelector(
+      '#profilePageLevelBadge'
+    )
+
+  const xpText =
+    document.querySelector(
+      '#profileXpText'
+    )
+
+  const xpTotal =
+    document.querySelector(
+      '#profileXpTotal'
+    )
+
+  const xpFill =
+    document.querySelector(
+      '#profileXpFill'
+    )
+
+  if (levelBadge) {
+    levelBadge.textContent =
+      `Lv.${levelState.level}`
+  }
+
+  if (pageLevelBadge) {
+    pageLevelBadge.textContent =
+      levelState.level >=
+      MAX_PLAYER_LEVEL
+        ? 'Lv.100 MAX'
+        : `Lv.${levelState.level}`
+  }
+
+  if (xpText) {
+    xpText.textContent =
+      levelState.level >=
+      MAX_PLAYER_LEVEL
+        ? 'وصلت للمستوى الأقصى'
+        : `${levelState.currentXp} / ${levelState.nextXp} XP`
+  }
+
+  if (xpTotal) {
+    xpTotal.textContent =
+      `${levelState.totalXp} XP`
+  }
+
+  if (xpFill) {
+    xpFill.style.width =
+      `${levelState.percent}%`
   }
 
 
@@ -752,6 +2022,11 @@ function updateProfileUI() {
     'impossible'
   )
 
+  updateLevelProfileStats(
+    'online'
+  )
+  
+
 
   // ========================================
   // آخر المباريات
@@ -769,20 +2044,35 @@ function updateLevelProfileStats(
 
   if (!stats) return
 
-  document.querySelector(
-    `#${level}Played`
-  ).textContent =
-    `${stats.played} مباراة`
+  const played =
+    document.querySelector(
+      `#${level}Played`
+    )
 
-  document.querySelector(
-    `#${level}Wins`
-  ).textContent =
-    `${stats.wins} فوز`
+  const wins =
+    document.querySelector(
+      `#${level}Wins`
+    )
 
-  document.querySelector(
-    `#${level}Losses`
-  ).textContent =
-    `${stats.losses} خسارة`
+  const losses =
+    document.querySelector(
+      `#${level}Losses`
+    )
+
+  if (played) {
+    played.textContent =
+      `${stats.played} مباراة`
+  }
+
+  if (wins) {
+    wins.textContent =
+      `${stats.wins} فوز`
+  }
+
+  if (losses) {
+    losses.textContent =
+      `${stats.losses} خسارة`
+  }
 }
 
 
@@ -870,6 +2160,433 @@ function renderGameHistory() {
       historyBox.appendChild(item)
     })
 }
+// ========================================
+// ♛ لوحة الصدارة
+// ========================================
+
+let leaderboardPlayers = []
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function getPublicPlayerLevelState(player) {
+  return getPlayerLevelState({
+    levels:
+      player?.levels || {}
+  })
+}
+
+async function loadLeaderboard() {
+  const list =
+    document.querySelector(
+      '#leaderboardList'
+    )
+
+  if (!list) return
+
+  list.innerHTML = `
+    <div class="leaderboard-loading">
+      جاري تحميل اللاعبين...
+    </div>
+  `
+
+  const { data, error } =
+    await supabase.rpc(
+      'get_leaderboard'
+    )
+
+  if (error) {
+    console.error(
+      'خطأ في تحميل لوحة الصدارة:',
+      error
+    )
+
+    list.innerHTML = `
+      <div class="leaderboard-empty">
+        تعذر تحميل لوحة الصدارة.
+      </div>
+    `
+
+    return
+  }
+
+  leaderboardPlayers =
+    Array.isArray(data)
+      ? data
+      : []
+
+  renderLeaderboard()
+}
+
+function renderLeaderboard() {
+  const list =
+    document.querySelector(
+      '#leaderboardList'
+    )
+
+  if (!list) return
+
+  if (
+    leaderboardPlayers.length === 0
+  ) {
+    list.innerHTML = `
+      <div class="leaderboard-empty">
+        ما فيه لاعبين في لوحة الصدارة إلى الآن.
+      </div>
+    `
+
+    return
+  }
+
+  list.innerHTML =
+    leaderboardPlayers
+      .map((player, index) => {
+        const rank =
+          index + 1
+
+        const points =
+          Number(player.wins) || 0
+
+        const levelState =
+          getPublicPlayerLevelState(
+            player
+          )
+
+        const rankText =
+          rank === 1
+            ? '🥇'
+            : rank === 2
+              ? '🥈'
+              : rank === 3
+                ? '🥉'
+                : `#${rank}`
+
+        return `
+          <button
+            class="leaderboard-row"
+            type="button"
+            data-player-id="${escapeHtml(player.id)}"
+          >
+            <span class="leaderboard-rank">
+              ${rankText}
+            </span>
+
+            <span class="leaderboard-player-copy">
+              <strong>
+                ${escapeHtml(player.name || 'لاعب')}
+              </strong>
+
+              <small>
+                Lv.${levelState.level}
+                • ${Number(player.games) || 0} مباراة
+              </small>
+            </span>
+
+            <span class="leaderboard-points">
+              <strong>${points}</strong>
+              <small>نقطة</small>
+            </span>
+          </button>
+        `
+      })
+      .join('')
+
+  list
+    .querySelectorAll(
+      '.leaderboard-row'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          const player =
+            leaderboardPlayers
+              .find(
+                item =>
+                  String(item.id) ===
+                  String(
+                    button.dataset.playerId
+                  )
+              )
+
+          if (player) {
+            openPublicPlayerProfile(
+              player
+            )
+          }
+        }
+      )
+    })
+}
+
+function getPublicLevelStat(
+  player,
+  level
+) {
+  const stats =
+    player
+      ?.levels
+      ?.[level] || {
+        played: 0,
+        wins: 0,
+        losses: 0
+      }
+
+  return {
+    played:
+      Number(stats.played) || 0,
+    wins:
+      Number(stats.wins) || 0,
+    losses:
+      Number(stats.losses) || 0
+  }
+}
+
+function openPublicPlayerProfile(
+  player
+) {
+  const main =
+    document.querySelector(
+      '#leaderboardMain'
+    )
+
+  const view =
+    document.querySelector(
+      '#publicPlayerView'
+    )
+
+  if (!main || !view) return
+
+  const levelState =
+    getPublicPlayerLevelState(
+      player
+    )
+
+  const easy =
+    getPublicLevelStat(
+      player,
+      'easy'
+    )
+
+  const medium =
+    getPublicLevelStat(
+      player,
+      'medium'
+    )
+
+  const hard =
+    getPublicLevelStat(
+      player,
+      'hard'
+    )
+
+  const impossible =
+    getPublicLevelStat(
+      player,
+      'impossible'
+    )
+
+  const online =
+    getPublicLevelStat(
+      player,
+      'online'
+    )
+
+  main.hidden = true
+  view.hidden = false
+
+  view.innerHTML = `
+    <button
+      id="publicProfileBackBtn"
+      class="profile-back-btn public-profile-back-btn"
+      type="button"
+    >
+      ← لوحة الصدارة
+    </button>
+
+    <div class="public-profile-card">
+      <div class="public-profile-avatar">
+        👤
+      </div>
+
+      <div class="public-profile-name-row">
+        <h2>
+          ${escapeHtml(player.name || 'لاعب')}
+        </h2>
+
+        <span class="player-level-badge">
+          Lv.${levelState.level}
+        </span>
+      </div>
+
+      <div class="public-profile-xp">
+        <div class="profile-xp-head">
+          <span>
+            ${
+              levelState.level >=
+              MAX_PLAYER_LEVEL
+                ? 'MAX'
+                : `${levelState.currentXp} / ${levelState.nextXp} XP`
+            }
+          </span>
+
+          <span>
+            ${levelState.totalXp} XP
+          </span>
+        </div>
+
+        <div class="profile-xp-track">
+          <span
+            class="profile-xp-fill"
+            style="width: ${levelState.percent}%"
+          ></span>
+        </div>
+      </div>
+
+      <div class="public-profile-stats">
+        <div>
+          <span>المباريات</span>
+          <strong>${Number(player.games) || 0}</strong>
+        </div>
+
+        <div>
+          <span>الانتصارات</span>
+          <strong>${Number(player.wins) || 0}</strong>
+        </div>
+
+        <div>
+          <span>الخسائر</span>
+          <strong>${Number(player.losses) || 0}</strong>
+        </div>
+
+        <div>
+          <span>النقاط</span>
+          <strong>${Number(player.wins) || 0}</strong>
+        </div>
+      </div>
+
+      <div class="public-level-list">
+        ${renderPublicLevelRow('سهل', easy)}
+        ${renderPublicLevelRow('متوسط', medium)}
+        ${renderPublicLevelRow('صعب', hard)}
+        ${renderPublicLevelRow('☠️ أتحداك تفوز', impossible)}
+        ${renderPublicLevelRow('🌐 أونلاين', online)}
+      </div>
+    </div>
+  `
+
+  document
+    .querySelector(
+      '#publicProfileBackBtn'
+    )
+    ?.addEventListener(
+      'click',
+      () => {
+        view.hidden = true
+        view.innerHTML = ''
+        main.hidden = false
+      }
+    )
+}
+
+function renderPublicLevelRow(
+  title,
+  stats
+) {
+  return `
+    <div class="public-level-row">
+      <div>
+        <strong>${title}</strong>
+        <small>
+          ${stats.played} مباراة
+        </small>
+      </div>
+
+      <div>
+        <span>${stats.wins} فوز</span>
+        <span>${stats.losses} خسارة</span>
+      </div>
+    </div>
+  `
+}
+
+
+// ========================================
+// تحديث واجهة الحساب
+// ========================================
+
+async function refreshAuthUI() {
+
+  await pendingProfileSave
+    .catch(() => {})
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  currentAuthUser = user || null
+  if (user) {
+  await loadCloudProfile(user)
+}
+
+  const guestView =
+    document.querySelector('#guestAccountView')
+
+  const loginView =
+    document.querySelector('#loginAccountView')
+
+  const registerView =
+    document.querySelector('#registerAccountView')
+
+  const loggedView =
+    document.querySelector('#loggedAccountView')
+
+  if (!guestView || !loggedView) {
+    return
+  }
+
+  if (user) {
+
+    guestView.hidden = true
+
+    if (loginView) {
+      loginView.hidden = true
+    }
+
+    if (registerView) {
+      registerView.hidden = true
+    }
+
+    loggedView.hidden = false
+
+    const name =
+      playerProfile.name ||
+      user.user_metadata?.name ||
+      'لاعب'
+
+    document.querySelector(
+      '#loggedAccountName'
+    ).textContent = name
+
+    document.querySelector(
+      '#loggedAccountEmail'
+    ).textContent =
+      user.email || ''
+
+  }
+
+  else {
+
+    guestView.hidden = false
+    loggedView.hidden = true
+  }
+}
 function setupHomeEvents() {
 
   const modal =
@@ -885,6 +2602,21 @@ function setupHomeEvents() {
   const profileView =
     document.querySelector(
       '#profileView'
+    )
+
+  const leaderboardView =
+    document.querySelector(
+      '#leaderboardView'
+    )
+
+  const leaderboardMain =
+    document.querySelector(
+      '#leaderboardMain'
+    )
+
+  const publicPlayerView =
+    document.querySelector(
+      '#publicPlayerView'
     )
 
 
@@ -917,6 +2649,53 @@ function setupHomeEvents() {
       () => {
 
         profileView.hidden = true
+        mainContent.hidden = false
+      }
+    )
+
+
+  // ========================================
+  // لوحة الصدارة
+  // ========================================
+
+  document
+    .querySelector('#leaderboardBtn')
+    .addEventListener(
+      'click',
+      () => {
+        mainContent.hidden = true
+        profileView.hidden = true
+        leaderboardView.hidden = false
+
+        if (publicPlayerView) {
+          publicPlayerView.hidden = true
+          publicPlayerView.innerHTML = ''
+        }
+
+        if (leaderboardMain) {
+          leaderboardMain.hidden = false
+        }
+
+        loadLeaderboard()
+      }
+    )
+
+  document
+    .querySelector('#leaderboardBackBtn')
+    .addEventListener(
+      'click',
+      () => {
+        leaderboardView.hidden = true
+
+        if (publicPlayerView) {
+          publicPlayerView.hidden = true
+          publicPlayerView.innerHTML = ''
+        }
+
+        if (leaderboardMain) {
+          leaderboardMain.hidden = false
+        }
+
         mainContent.hidden = false
       }
     )
@@ -1036,6 +2815,197 @@ function setupHomeEvents() {
   .addEventListener(
     'click',
     showOnlineMenu
+  )// ========================================
+// إنشاء حساب فعلي
+// ========================================
+
+document
+  .querySelector('#registerSubmitBtn')
+  ?.addEventListener(
+    'click',
+    async () => {
+
+      const name =
+        document
+          .querySelector('#registerName')
+          .value
+          .trim()
+
+      const email =
+        document
+          .querySelector('#registerEmail')
+          .value
+          .trim()
+
+      const password =
+        document
+          .querySelector('#registerPassword')
+          .value
+
+      const confirmPassword =
+        document
+          .querySelector(
+            '#registerPasswordConfirm'
+          )
+          .value
+
+      const message =
+        document.querySelector(
+          '#registerMessage'
+        )
+
+      if (
+        !name ||
+        !email ||
+        !password
+      ) {
+        message.textContent =
+          'عبّ جميع البيانات.'
+        return
+      }
+
+      if (password.length < 6) {
+        message.textContent =
+          'كلمة المرور لازم تكون 6 أحرف على الأقل.'
+        return
+      }
+
+      if (
+        password !==
+        confirmPassword
+      ) {
+        message.textContent =
+          'كلمتا المرور غير متطابقتين.'
+        return
+      }
+
+      message.textContent =
+        'جاري إنشاء الحساب...'
+
+      const {
+        data,
+        error
+      } =
+        await supabase.auth.signUp({
+          email,
+          password,
+
+          options: {
+            data: {
+              name
+            }
+          }
+        })
+
+      if (error) {
+
+        message.textContent =
+          error.message
+
+        return
+      }
+
+      if (data.session) {
+
+        message.textContent =
+          'تم إنشاء الحساب ✓'
+
+        await refreshAuthUI()
+      }
+
+      else {
+
+        message.textContent =
+          'تم إنشاء الحساب. تقدر تسجل دخولك الآن.'
+      }
+    }
+  )
+
+
+// ========================================
+// تسجيل الدخول
+// ========================================
+
+document
+  .querySelector('#loginSubmitBtn')
+  ?.addEventListener(
+    'click',
+    async () => {
+
+      const email =
+        document
+          .querySelector('#loginEmail')
+          .value
+          .trim()
+
+      const password =
+        document
+          .querySelector('#loginPassword')
+          .value
+
+      const message =
+        document.querySelector(
+          '#loginMessage'
+        )
+
+      if (!email || !password) {
+
+        message.textContent =
+          'اكتب البريد وكلمة المرور.'
+
+        return
+      }
+
+      message.textContent =
+        'جاري تسجيل الدخول...'
+
+      const {
+        error
+      } =
+        await supabase.auth
+          .signInWithPassword({
+            email,
+            password
+          })
+
+      if (error) {
+
+        message.textContent =
+          'البريد أو كلمة المرور غير صحيحة.'
+
+        return
+      }
+
+      message.textContent =
+        'تم تسجيل الدخول ✓'
+
+      await refreshAuthUI()
+    }
+  )
+
+
+// ========================================
+// تسجيل الخروج
+// ========================================
+
+document
+  .querySelector('#logoutAccountBtn')
+  ?.addEventListener(
+    'click',
+    async () => {
+
+      await supabase.auth.signOut()
+
+      currentAuthUser = null
+
+      // نرجع لإحصائيات الزائر المحلية
+      playerProfile =
+        loadProfile()
+
+      updateProfileUI()
+
+      await refreshAuthUI()
+    }
   )
       }
       // ========================================
@@ -1048,58 +3018,69 @@ function showOnlineMenu() {
     document.querySelector('.modal-box')
 
   modalBox.innerHTML = `
-    <button
-      id="onlineBackBtn"
-      class="back-btn"
-    >
-      →
-    </button>
+    <div class="online-modal-head">
 
-    <h2>اللعب مع صديق</h2>
+      <button
+        id="onlineBackBtn"
+        class="back-btn modern-back-btn"
+        type="button"
+      >
+        →
+      </button>
 
-    <p class="modal-description">
-      اختر طريقة الدخول
-    </p>
+      <div class="online-modal-badge">
+        🌐 لعب أونلاين
+      </div>
 
-    <div class="game-options">
+    </div>
+
+    <div class="online-modal-copy">
+      <h2>العب مع صديقك</h2>
+
+      <p class="modal-description">
+        أنشئ روم جديد أو ادخل بالكود اللي أرسله لك صديقك.
+      </p>
+    </div>
+
+    <div class="online-choice-grid">
 
       <button
         id="createRoomBtn"
-        class="game-option"
+        class="online-choice-card create-room-card"
+        type="button"
       >
-        <span class="option-icon">
+        <span class="online-choice-icon">
           ＋
         </span>
 
-        <span class="option-text">
-          <strong>
-            إنشاء روم
-          </strong>
-
+        <span class="online-choice-copy">
+          <strong>إنشاء روم</strong>
           <small>
-            أنشئ جلسة جديدة وأرسل الكود لصديقك
+            خذ كود من 5 أرقام وشاركه مع صديقك
           </small>
         </span>
+
+        <span class="online-choice-arrow">←</span>
       </button>
 
 
       <button
         id="joinRoomBtn"
-        class="game-option"
+        class="online-choice-card join-room-card"
+        type="button"
       >
-        <span class="option-icon">
+        <span class="online-choice-icon">
           #
         </span>
 
-        <span class="option-text">
-          <strong>
-            الانضمام إلى روم
-          </strong>
-
+        <span class="online-choice-copy">
+          <strong>الانضمام إلى روم</strong>
           <small>
-            أدخل كود الجلسة المكون من 5 أرقام
+            عندك كود؟ ادخله وابدأ المباراة
           </small>
         </span>
+
+        <span class="online-choice-arrow">←</span>
       </button>
 
     </div>
@@ -1180,43 +3161,105 @@ function showJoinRoom() {
     document.querySelector('.modal-box')
 
   modalBox.innerHTML = `
-    <button
-      id="joinBackBtn"
-      class="back-btn"
-    >
-      →
-    </button>
+    <div class="online-modal-head">
 
-    <h2>
-      الانضمام إلى روم
-    </h2>
+      <button
+        id="joinBackBtn"
+        class="back-btn modern-back-btn"
+        type="button"
+      >
+        →
+      </button>
 
-    <p class="modal-description">
-      أدخل كود الجلسة
-    </p>
+      <div class="online-modal-badge">
+        # كود الجلسة
+      </div>
 
-    <input
-      id="roomCodeInput"
-      type="text"
-      inputmode="numeric"
-      maxlength="5"
-      placeholder="00000"
-      class="room-code-input"
-      autocomplete="one-time-code"
-    >
+    </div>
 
-    <button
-      id="confirmJoinRoomBtn"
-      class="primary-btn"
-    >
-      دخول الروم
-    </button>
+    <div class="join-room-modern">
 
-    <p
-      id="joinRoomError"
-      class="join-room-error"
-    ></p>
+      <div class="join-room-modern-icon">
+        #
+      </div>
+
+      <div class="join-room-modern-copy">
+        <h2>الانضمام إلى روم</h2>
+
+        <p class="modal-description">
+          اكتب كود الجلسة المكوّن من 5 أرقام.
+        </p>
+      </div>
+
+      <label class="room-code-field">
+        <span class="room-code-field-label">
+          كود الروم
+        </span>
+
+        <span class="room-code-input-wrap">
+          <span class="room-code-prefix">#</span>
+
+          <input
+            id="roomCodeInput"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="5"
+            placeholder="12345"
+            class="room-code-input"
+            autocomplete="one-time-code"
+            aria-label="كود الروم"
+          >
+        </span>
+      </label>
+
+      <div class="room-code-help">
+        <span>●</span>
+        الكود يتكون من 5 أرقام فقط
+      </div>
+
+      <button
+        id="confirmJoinRoomBtn"
+        class="join-room-submit-btn"
+        type="button"
+      >
+        <span>دخول الروم</span>
+        <span class="join-room-submit-arrow">←</span>
+      </button>
+
+      <p
+        id="joinRoomError"
+        class="join-room-error"
+      ></p>
+
+    </div>
   `
+
+  const input =
+    document.querySelector(
+      '#roomCodeInput'
+    )
+
+  input?.focus()
+
+  input?.addEventListener(
+    'input',
+    () => {
+      input.value =
+        input.value
+          .replace(/\D/g, '')
+          .slice(0, 5)
+    }
+  )
+
+  input?.addEventListener(
+    'keydown',
+    event => {
+      if (event.key === 'Enter') {
+        joinOnlineRoom()
+      }
+    }
+  )
 
   document
     .querySelector('#joinBackBtn')
@@ -1407,10 +3450,7 @@ function startOnlineGame() {
     .querySelector('#exitGameBtn')
     .addEventListener(
       'click',
-      () => {
-        leaveOnlineRoom()
-        showHome()
-      }
+      exitCurrentGameAsLoss
     )
 
   updatePlayerHighlight()
@@ -1431,9 +3471,15 @@ function updateOnlineTurnUI() {
   if (!turnText) return
 
   if (!onlineOpponentConnected) {
-    turnText.textContent =
-      `بانتظار صديقك... الكود ${onlineRoomCode}`
+   turnText.innerHTML = `
+  <span class="waiting-label">
+    بانتظار صديقك
+  </span>
 
+  <span class="waiting-room-code">
+    ${onlineRoomCode}
+  </span>
+`
     updatePlayerHighlight()
     return
   }
@@ -1593,6 +3639,7 @@ function moveSelectedPieceOnline(square) {
   }
 
   square.appendChild(piece)
+  playMoveSound()
   promoteIfNeeded(piece)
 
   currentGameMoves++
@@ -1720,6 +3767,7 @@ function applyRemoteOnlineMove(move) {
   }
 
   target.appendChild(piece)
+  playMoveSound()
   promoteIfNeeded(piece)
 
   clearSelection()
@@ -1831,6 +3879,45 @@ function getLevelName(level) {
 }
 
 // ========================================
+// الخروج من مباراة جارية = خسارة
+// ========================================
+
+async function exitCurrentGameAsLoss() {
+  const isOnlineMatch =
+    currentLevel === 'online'
+
+  const shouldRecordLoss =
+    !gameOver &&
+    !currentGameRecorded &&
+    currentLevel &&
+    (
+      !isOnlineMatch ||
+      (
+        onlineMode &&
+        onlineOpponentConnected
+      )
+    )
+
+  if (shouldRecordLoss) {
+    gameOver = true
+
+    await recordGameResult(
+      false,
+      {
+        forfeited: true
+      }
+    )
+  }
+
+  if (onlineMode) {
+    leaveOnlineRoom()
+  }
+
+  showHome()
+}
+
+
+// ========================================
 // بدء اللعبة
 // ========================================
 
@@ -1915,7 +4002,10 @@ currentGameRecorded = false
 
   document
     .querySelector('#exitGameBtn')
-    .addEventListener('click', showHome)
+    .addEventListener(
+      'click',
+      exitCurrentGameAsLoss
+    )
 }
 
 // ========================================
@@ -2563,9 +4653,10 @@ function moveSelectedPiece(square) {
 
   // تحريك الحجر
   square.appendChild(
-    selectedPiece
-  )
+  selectedPiece
+)
 
+playMoveSound()
   // ترقية الحجر إذا وصل آخر صف
   promoteIfNeeded(
     selectedPiece
@@ -3000,6 +5091,7 @@ function executeImpossibleTurn(
 
   // تحريك الحجر
   target.appendChild(piece)
+  playMoveSound()
 
   // ترقية إذا وصل للنهاية
   promoteIfNeeded(piece)
@@ -6291,6 +8383,7 @@ function executeComputerMove(move) {
   // ========================================
 
   target.appendChild(piece)
+  playMoveSound()
 
   // ========================================
   // الترقية إلى ملك
