@@ -4,7 +4,8 @@ import { supabase } from './supabase.js'
 const AUDIO_SOURCES = {
   move: '/move.wav',
   win: '/win.wav',
-  lose: '/lose.wav'
+  lose: '/lose.wav',
+  king: '/king.wav'
 }
 
 function createGameAudio(src, volume) {
@@ -47,6 +48,12 @@ const loseSound =
     0.7
   )
 
+const kingSound =
+  createGameAudio(
+    AUDIO_SOURCES.king,
+    0.72
+  )
+
 let moveSoundIndex = 0
 let audioPrimed = false
 
@@ -57,7 +64,8 @@ function primeGameAudio() {
   const sounds = [
     ...moveSoundPool,
     winSound,
-    loseSound
+    loseSound,
+    kingSound
   ]
 
   sounds.forEach(audio => {
@@ -142,6 +150,10 @@ function playResultSound(playerWon) {
   )
 }
 
+function playKingSound() {
+  playAudioNow(kingSound)
+}
+
 function playMoveSound() {
   const sound =
     moveSoundPool[moveSoundIndex]
@@ -186,6 +198,15 @@ socket.on('player-joined', () => {
 
   onlineOpponentConnected = true
   updateOnlineTurnUI()
+
+  if (
+    document.querySelector(
+      '#matchTimer'
+    )
+  ) {
+    resetMatchTimer()
+    startMatchTimer()
+  }
 })
 
 socket.on('game-move', (move) => {
@@ -398,6 +419,128 @@ let gameOver = false
 
 let impossibleWorker = null
 let impossibleThinkTimer = null
+
+// ========================================
+// 🛡️ Worker مستوى خالد
+// ========================================
+
+let khaledWorker = null
+let khaledMoveDelayTimer = null
+const KHALED_MIN_THINK_MS = 2000
+
+// ========================================
+// ⏱️ مؤقت المباراة
+// ========================================
+
+let matchTimerInterval = null
+let matchTimerStartedAt = 0
+let matchTimerElapsedMs = 0
+
+function formatMatchTime(totalMs) {
+  const totalSeconds =
+    Math.max(
+      0,
+      Math.floor(
+        Number(totalMs || 0) / 1000
+      )
+    )
+
+  const hours =
+    Math.floor(
+      totalSeconds / 3600
+    )
+
+  const minutes =
+    Math.floor(
+      (totalSeconds % 3600) / 60
+    )
+
+  const seconds =
+    totalSeconds % 60
+
+  const pad =
+    value =>
+      String(value).padStart(2, '0')
+
+  if (hours > 0) {
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+  }
+
+  return `${pad(minutes)}:${pad(seconds)}`
+}
+
+function renderMatchTimer() {
+  const element =
+    document.querySelector(
+      '#matchTimer'
+    )
+
+  if (!element) return
+
+  const elapsed =
+    matchTimerStartedAt
+      ? (
+        matchTimerElapsedMs +
+        (
+          performance.now() -
+          matchTimerStartedAt
+        )
+      )
+      : matchTimerElapsedMs
+
+  element.textContent =
+    formatMatchTime(elapsed)
+}
+
+function stopMatchTimer(
+  preserveElapsed = true
+) {
+  if (
+    preserveElapsed &&
+    matchTimerStartedAt
+  ) {
+    matchTimerElapsedMs +=
+      performance.now() -
+      matchTimerStartedAt
+  }
+
+  matchTimerStartedAt = 0
+
+  if (matchTimerInterval) {
+    clearInterval(
+      matchTimerInterval
+    )
+
+    matchTimerInterval = null
+  }
+
+  renderMatchTimer()
+}
+
+function resetMatchTimer() {
+  stopMatchTimer(false)
+
+  matchTimerElapsedMs = 0
+  matchTimerStartedAt = 0
+
+  renderMatchTimer()
+}
+
+function startMatchTimer() {
+  stopMatchTimer(true)
+
+  matchTimerStartedAt =
+    performance.now()
+
+  renderMatchTimer()
+
+  matchTimerInterval =
+    setInterval(
+      renderMatchTimer,
+      1000
+    )
+}
+
 // ========================================
 // 👤 الملف الشخصي والإحصائيات
 // ========================================
@@ -706,6 +849,12 @@ function createDefaultProfile() {
   losses: 0
 },
 
+khaled: {
+  played: 0,
+  wins: 0,
+  losses: 0
+},
+
 online: {
   played: 0,
   wins: 0,
@@ -762,6 +911,11 @@ function loadProfile() {
         impossible: {
           ...defaultProfile.levels.impossible,
           ...(data.levels?.impossible || {})
+        },
+
+        khaled: {
+          ...defaultProfile.levels.khaled,
+          ...(data.levels?.khaled || {})
         },
 
         online: {
@@ -1428,6 +1582,9 @@ function ensureProgressionStyles() {
 function showHome() {
   ensureProgressionStyles()
   stopImpossibleWorker()
+  stopKhaledWorker()
+  stopMatchTimer(false)
+  matchTimerElapsedMs = 0
 
   if (onlineMode) {
     leaveOnlineRoom()
@@ -1968,6 +2125,18 @@ function showHome() {
               </div>
             </div>
 
+            <div class="level-stat-row khaled-row">
+              <div class="level-stat-main">
+                <strong>🛡️ خالد</strong>
+                <small id="khaledPlayed">0 مباراة</small>
+              </div>
+
+              <div class="level-results">
+                <span id="khaledWins">0 فوز</span>
+                <span id="khaledLosses">0 خسارة</span>
+              </div>
+            </div>
+
             <div class="level-stat-row online-row">
 
               <div class="level-stat-main online-stat-main">
@@ -2373,6 +2542,10 @@ function updateProfileUI() {
 
   updateLevelProfileStats(
     'impossible'
+  )
+
+  updateLevelProfileStats(
+    'khaled'
   )
 
   updateLevelProfileStats(
@@ -2788,6 +2961,12 @@ function openPublicPlayerProfile(
       'impossible'
     )
 
+  const khaled =
+    getPublicLevelStat(
+      player,
+      'khaled'
+    )
+
   const online =
     getPublicLevelStat(
       player,
@@ -2874,6 +3053,7 @@ function openPublicPlayerProfile(
         ${renderPublicLevelRow('متوسط', medium)}
         ${renderPublicLevelRow('صعب', hard)}
         ${renderPublicLevelRow('☠️ أتحداك تفوز', impossible)}
+        ${renderPublicLevelRow('🛡️ خالد', khaled)}
         ${renderPublicLevelRow('🌐 أونلاين', online)}
       </div>
     </div>
@@ -3746,6 +3926,8 @@ function joinOnlineRoom() {
 
 function startOnlineGame() {
   stopImpossibleWorker()
+  stopKhaledWorker()
+  resetMatchTimer()
 
   currentLevel = 'online'
   currentTurn = 'cream'
@@ -3805,15 +3987,26 @@ function startOnlineGame() {
 
       </div>
 
-      <div class="turn-box">
-        <span
-          id="turnPiece"
-          class="turn-piece"
-        ></span>
+      <div class="game-status-strip">
+        <div class="match-timer-card">
+          <span class="match-timer-icon">⏱</span>
 
-        <span id="turnText">
-          جاري تجهيز المباراة...
-        </span>
+          <div class="match-timer-copy">
+            <small>مدة المباراة</small>
+            <strong id="matchTimer">00:00</strong>
+          </div>
+        </div>
+
+        <div class="turn-box">
+          <span
+            id="turnPiece"
+            class="turn-piece"
+          ></span>
+
+          <span id="turnText">
+            جاري تجهيز المباراة...
+          </span>
+        </div>
       </div>
 
       <div id="board" class="board"></div>
@@ -3871,6 +4064,13 @@ function startOnlineGame() {
 
   updatePlayerHighlight()
   updateOnlineTurnUI()
+
+  if (onlineOpponentConnected) {
+    startMatchTimer()
+  }
+  else {
+    resetMatchTimer()
+  }
 }
 
 
@@ -4314,6 +4514,14 @@ function showDifficulty() {
   </span>
 </button>
 
+<button class="difficulty-btn khaled-difficulty-btn" data-level="khaled">
+  <span class="difficulty-title">🛡️ خالد</span>
+
+  <span class="difficulty-description">
+    المتصدر الأعلى وفوق الجميع ويعلو الممالك
+  </span>
+</button>
+
     </div>
   `
 
@@ -4353,6 +4561,10 @@ function getLevelName(level) {
     return '☠️ أتحداك تفوز'
   }
 
+  if (level === 'khaled') {
+    return '🛡️ خالد'
+  }
+
   if (level === 'online') {
     return 'أونلاين'
   }
@@ -4377,6 +4589,9 @@ async function exitCurrentGameAsLoss() {
 
     if (shouldRecordOnlineLoss) {
       gameOver = true
+      stopImpossibleWorker()
+      stopKhaledWorker()
+      stopMatchTimer(true)
 
       // التحديث المحلي للتصنيف والإحصائيات يحصل مباشرة،
       // والحفظ السحابي يكمل بدون تعطيل شاشة الخروج.
@@ -4405,6 +4620,9 @@ async function exitCurrentGameAsLoss() {
   if (shouldRecordLoss) {
 
     gameOver = true
+    stopImpossibleWorker()
+    stopKhaledWorker()
+    stopMatchTimer(true)
 
     await recordGameResult(
       false,
@@ -4426,6 +4644,10 @@ function startGame(level) {
   if (onlineMode) {
     leaveOnlineRoom()
   }
+
+  stopImpossibleWorker()
+  stopKhaledWorker()
+  resetMatchTimer()
 
   currentLevel = level
   currentTurn = 'cream'
@@ -4453,15 +4675,26 @@ currentGameRecorded = false
 
       </div>
 
-      <div class="turn-box">
-        <span
-          id="turnPiece"
-          class="turn-piece cream-turn"
-        ></span>
+      <div class="game-status-strip">
+        <div class="match-timer-card">
+          <span class="match-timer-icon">⏱</span>
 
-        <span id="turnText">
-          دورك
-        </span>
+          <div class="match-timer-copy">
+            <small>مدة المباراة</small>
+            <strong id="matchTimer">00:00</strong>
+          </div>
+        </div>
+
+        <div class="turn-box">
+          <span
+            id="turnPiece"
+            class="turn-piece cream-turn"
+          ></span>
+
+          <span id="turnText">
+            دورك
+          </span>
+        </div>
       </div>
 
       <div id="board" class="board"></div>
@@ -4500,6 +4733,7 @@ currentGameRecorded = false
   `
 
   createBoard()
+  startMatchTimer()
 
   document
     .querySelector('#exitGameBtn')
@@ -5253,7 +5487,7 @@ function startComputerTurn() {
   currentTurn = 'black'
 
   setTurnText(
-    'الكمبيوتر يفكر...'
+    'اصبر افكر'
   )
 
   updatePlayerHighlight()
@@ -5291,6 +5525,16 @@ function computerMove() {
     return
   }
 
+  // ========================================
+  // 🛡️ خالد
+  // أبطأ وأعمق من مستوى أتحداك تفوز ويعمل داخل Worker
+  // ========================================
+
+  if (currentLevel === 'khaled') {
+    startKhaledComputerMove(moves)
+    return
+  }
+
   // باقي المستويات
   const chosen =
     chooseComputerMove(moves)
@@ -5312,7 +5556,7 @@ function startImpossibleComputerMove(moves) {
   stopImpossibleWorker()
 
   setTurnText(
-    '☠️ أتحداك تفوز يفكر بعمق...'
+    'اصبر يامسلم'
   )
 
   const startedAt = performance.now()
@@ -5337,7 +5581,7 @@ function startImpossibleComputerMove(moves) {
     )
 
     setTurnText(
-      `☠️ يفكر بعمق... ${seconds}ث`
+      `${seconds}`
     )
   }, 1000)
 
@@ -5369,7 +5613,7 @@ function startImpossibleComputerMove(moves) {
         currentTurn === 'black'
       ) {
         setTurnText(
-          `☠️ عمق ${data.depth} • يفكر...`
+          `${data.depth}  افكر اصبر`
         )
       }
 
@@ -5513,6 +5757,252 @@ function stopImpossibleWorker() {
     impossibleWorker.terminate()
 
     impossibleWorker = null
+  }
+}
+
+
+// ========================================
+// 🛡️ تشغيل مستوى خالد
+// ========================================
+
+function startKhaledComputerMove(moves) {
+  stopKhaledWorker()
+
+  setTurnText('افكر يخوي')
+
+  const startedAt =
+    performance.now()
+
+  khaledWorker =
+    new Worker(
+      new URL(
+        './khaled-worker.js',
+        import.meta.url
+      ),
+      {
+        type: 'module'
+      }
+    )
+
+  khaledWorker.onmessage =
+    event => {
+      const data =
+        event.data || {}
+
+      if (data.type === 'progress') {
+        if (
+          !gameOver &&
+          currentTurn === 'black'
+        ) {
+          setTurnText('عطني فرصه')
+        }
+
+        return
+      }
+
+      if (data.type !== 'result') {
+        return
+      }
+
+      const elapsed =
+        performance.now() -
+        startedAt
+
+      stopKhaledWorker()
+
+      if (
+        gameOver ||
+        currentTurn !== 'black'
+      ) {
+        return
+      }
+
+      const steps =
+        Array.isArray(data.steps)
+          ? data.steps
+          : []
+
+      if (steps.length === 0) {
+        console.error(
+          'Khaled AI returned no move:',
+          data
+        )
+
+        const freshMoves =
+          getAllMoves('black')
+
+        if (freshMoves.length === 0) {
+          finishGame(
+            'فزت! خالد لا يملك أي حركة 👑'
+          )
+          return
+        }
+
+        const fallback =
+          chooseHardMove(
+            freshMoves
+          )
+
+        const remaining =
+          Math.max(
+            0,
+            KHALED_MIN_THINK_MS -
+              elapsed
+          )
+
+        setTurnText('اركد')
+
+        khaledMoveDelayTimer =
+          setTimeout(
+            () => {
+              khaledMoveDelayTimer = null
+
+              if (
+                gameOver ||
+                currentTurn !== 'black'
+              ) {
+                return
+              }
+
+              executeComputerMove(
+                fallback
+              )
+            },
+            remaining
+          )
+
+        return
+      }
+
+      const remaining =
+        Math.max(
+          0,
+          KHALED_MIN_THINK_MS -
+            elapsed
+        )
+
+      setTurnText('اصبر')
+
+      khaledMoveDelayTimer =
+        setTimeout(
+          () => {
+            khaledMoveDelayTimer = null
+
+            if (
+              gameOver ||
+              currentTurn !== 'black'
+            ) {
+              return
+            }
+
+            executeImpossibleTurn(
+              steps,
+              0
+            )
+          },
+          remaining
+        )
+    }
+
+  khaledWorker.onerror =
+    error => {
+      console.error(
+        'Khaled Worker error:',
+        error
+      )
+
+      const elapsed =
+        performance.now() -
+        startedAt
+
+      stopKhaledWorker()
+
+      if (
+        gameOver ||
+        currentTurn !== 'black'
+      ) {
+        return
+      }
+
+      const freshMoves =
+        getAllMoves('black')
+
+      if (freshMoves.length === 0) {
+        finishGame(
+          'فزت! خالد لا يملك أي حركة 👑'
+        )
+        return
+      }
+
+      const fallback =
+        chooseHardMove(
+          freshMoves
+        )
+
+      const remaining =
+        Math.max(
+          0,
+          KHALED_MIN_THINK_MS -
+            elapsed
+        )
+
+      setTurnText('اصبر افكر')
+
+      khaledMoveDelayTimer =
+        setTimeout(
+          () => {
+            khaledMoveDelayTimer = null
+
+            if (
+              gameOver ||
+              currentTurn !== 'black'
+            ) {
+              return
+            }
+
+            executeComputerMove(
+              fallback
+            )
+          },
+          remaining
+        )
+    }
+
+  khaledWorker.postMessage({
+    type: 'think',
+
+    board:
+      createAIBoard(),
+
+    // أول عدة أدوار فقط تستخدم لتنويع الافتتاحية
+    // بين حركات متقاربة جدًا بالقوة.
+    moveNumber:
+      currentGameMoves,
+
+    // الحد الأعلى عشر دقائق للحركة الواحدة.
+    maxTimeMs:
+      600000
+  })
+}
+
+
+// ========================================
+// إيقاف Worker خالد
+// ========================================
+
+function stopKhaledWorker() {
+  if (khaledMoveDelayTimer) {
+    clearTimeout(
+      khaledMoveDelayTimer
+    )
+
+    khaledMoveDelayTimer = null
+  }
+
+  if (khaledWorker) {
+    khaledWorker.terminate()
+
+    khaledWorker = null
   }
 }
 
@@ -5688,6 +6178,11 @@ function chooseComputerMove(moves) {
   // من computerMove عن طريق Web Worker
   return chooseHardMove(moves)
 }
+
+  if (currentLevel === 'khaled') {
+    // خالد يعمل من computerMove داخل Worker مستقل.
+    return chooseHardMove(moves)
+  }
 }
 
 
@@ -9054,6 +9549,9 @@ function makeKing(piece) {
   symbol.textContent = '♛'
 
   piece.appendChild(symbol)
+
+  // صوت خاص عند ترقية الحجر إلى ملك
+  playKingSound()
 }
 
 // ========================================
@@ -9325,6 +9823,8 @@ function finishGame(message) {
   gameOver = true
 
   stopImpossibleWorker()
+  stopKhaledWorker()
+  stopMatchTimer(true)
   clearSelection()
   setTurnText(message)
 
