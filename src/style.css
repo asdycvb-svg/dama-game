@@ -757,15 +757,21 @@ button {
    الحجر المحدد
 ========================= */
 
-.selected-piece {
-  transform:
-    scale(1.08);
+.selected-piece,
+.remote-selected-piece {
+    transform: scale(1.02);
+    outline: 2px solid white;
+    outline-offset: 3px;
+    border-radius: 50%;
+    box-shadow: none !important;
+}
 
-  box-shadow:
-    0 0 0 4px
-      rgba(243, 233, 210, 0.4),
-    0 7px 18px
-      rgba(0, 0, 0, 0.7);
+.computer-selected-piece {
+    transform: scale(1.02);
+    outline: 2px solid white;
+    outline-offset: 3px;
+    border-radius: 50%;
+    box-shadow: none !important;
 }
 
 
@@ -4290,3 +4296,39 @@ transform: none;
     padding-right: 2px;
   }
 }
+.piece.selected {
+  animation: selectedGlow 1.2s infinite alternate;
+  box-shadow:
+    0 0 12px rgba(255,255,255,0.9),
+    0 0 25px rgba(255,255,255,0.5);
+}
+
+@keyframes selectedGlow {
+  from {
+    filter: brightness(1);
+  }
+
+  to {
+    filter: brightness(1.25);
+  }
+}
+.active-piece {
+    animation: pieceGlow 1s ease-in-out infinite;
+    box-shadow: 0 0 18px rgba(255,255,255,0.9);
+    transform: scale(1.05);
+}
+
+@keyframes pieceGlow {
+    0% {
+        box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    }
+
+    50% {
+        box-shadow: 0 0 25px rgba(255,255,255,1);
+    }
+
+    100% {
+        box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    }
+}
+

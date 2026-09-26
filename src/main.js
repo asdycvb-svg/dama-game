@@ -215,6 +215,21 @@ socket.on('game-move', (move) => {
   applyRemoteOnlineMove(move)
 })
 
+// إظهار القطعة المحددة عند الطرف الآخر أونلاين
+socket.on('piece-selected', (data) => {
+  if (!onlineMode) return
+
+  // حذف أي تحديد أونلاين قديم
+  document.querySelectorAll('.remote-selected-piece')
+    .forEach(p => p.classList.remove('remote-selected-piece'))
+
+  const piece = getPieceAt(data.row, data.col)
+
+  if (piece) {
+    piece.classList.add('remote-selected-piece')
+  }
+})
+
 socket.on('restart-game', () => {
   if (!onlineMode) return
 
@@ -1569,6 +1584,26 @@ function ensureProgressionStyles() {
         grid-template-columns: repeat(2, 1fr);
       }
     }
+
+    .selected-ring,
+    .remote-selected-ring {
+      position: relative;
+      filter: none !important;
+      transform: none !important;
+      box-shadow: none !important;
+      animation: none !important;
+    }
+
+   .selected-ring::after,
+.remote-selected-ring::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border: 2px solid rgba(255,255,255,.9);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
   `
 
   document.head.appendChild(style)
@@ -2315,6 +2350,14 @@ function showHome() {
 
   setupHomeEvents()
 updateProfileUI()
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    currentAuthUser = session.user
+    await loadCloudProfile(session.user)
+    updateProfileUI()
+  }
+})
+
 refreshAuthUI()
   // ========================================
 // واجهة تسجيل الدخول وإنشاء الحساب
@@ -3105,13 +3148,18 @@ async function refreshAuthUI() {
     .catch(() => {})
 
   const {
-    data: { user }
-  } = await supabase.auth.getUser()
+    data: { session }
+  } = await supabase.auth.getSession()
+
+  const user = session?.user || null
 
   currentAuthUser = user || null
+
+  // نحافظ على الحساب بعد إغلاق الموقع أو الرجوع له
+  // ولا نمسح الجلسة بسبب قراءة مؤقتة فارغة من المتصفح
   if (user) {
-  await loadCloudProfile(user)
-}
+    await loadCloudProfile(user)
+  }
 
   const guestView =
     document.querySelector('#guestAccountView')
@@ -4229,9 +4277,18 @@ function selectOnlinePiece(piece) {
   clearHighlights()
   selectedPiece = piece
 
+  // إزالة أي تحديد قديم قبل وضع التحديد الجديد
+  document.querySelectorAll('.selected-piece')
+    .forEach(p => p.classList.remove('selected-piece'))
+
   piece.classList.add(
     'selected-piece'
   )
+
+  socket.emit('piece-selected', {
+    row: Number(piece.parentElement.dataset.row),
+    col: Number(piece.parentElement.dataset.col)
+  })
 
   if (captures.length > 0) {
     captures.forEach(showPlayerMove)
@@ -4269,6 +4326,7 @@ function moveSelectedPieceOnline(square) {
   }
 
   const piece = selectedPiece
+  
   const fromSquare = piece.parentElement
 
   const fromRow =
@@ -5275,11 +5333,15 @@ function selectPiece(piece) {
   }
 
   clearHighlights()
+  piece.classList.add("selected-piece")
 
   selectedPiece = piece
 
   piece.classList.add(
     'selected-piece'
+  )
+  piece.classList.add(
+    'piece-picked'
   )
 
   // إذا هذا الحجر عنده أكل
@@ -6137,7 +6199,7 @@ function executeImpossibleTurn(
 
   if (nextIndex < steps.length) {
     setTurnText(
-      'الكمبيوتر يكمل الأكل...'
+      ''
     )
 
     setTimeout(() => {
@@ -9336,6 +9398,26 @@ function evaluateAIBoard(board) {
 // تنفيذ حركة الكمبيوتر
 // ========================================
 
+function showComputerSelectedPiece(piece) {
+  document
+    .querySelectorAll('.computer-selected-piece')
+    .forEach(p =>
+      p.classList.remove('computer-selected-piece')
+    )
+
+  if (piece) {
+    piece.classList.add('computer-selected-piece')
+  }
+}
+
+function clearComputerSelectedPiece() {
+  document
+    .querySelectorAll('.computer-selected-piece')
+    .forEach(p =>
+      p.classList.remove('computer-selected-piece')
+    )
+}
+
 function executeComputerMove(move) {
   if (!move) {
     endComputerTurn()
@@ -9343,6 +9425,8 @@ function executeComputerMove(move) {
   }
 
   const piece = move.piece
+
+  showComputerSelectedPiece(piece)
 
   if (
     !piece ||
@@ -9439,7 +9523,7 @@ function executeComputerMove(move) {
       moreCaptures.length > 0
     ) {
       setTurnText(
-        'الكمبيوتر يكمل الأكل...'
+        ''
       )
 
       setTimeout(() => {
@@ -9477,6 +9561,8 @@ function executeComputerMove(move) {
 // ========================================
 
 function endComputerTurn() {
+  clearComputerSelectedPiece()
+
   if (gameOver) return
 
   currentTurn = 'cream'
@@ -9705,7 +9791,9 @@ function clearHighlights(
       )
       .forEach((piece) => {
         piece.classList.remove(
-          'selected-piece'
+          'selected-piece',
+          'piece-picked',
+          'selected-ring'
         )
       })
   }
@@ -9883,8 +9971,8 @@ function finishGame(message) {
 
   else {
     resultMessage.textContent = playerWon
-      ? 'قدرت تهزم الكمبيوتر!'
-      : 'الكمبيوتر جلدك هالمرة 😂'
+      ? 'فزت عليك'
+      :'هطفهههه'
   }
 
   const chance =

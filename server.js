@@ -317,6 +317,32 @@ io.on(
     )
 
 
+
+    // ========================================
+    // تحديد قطعة اللاعب
+    // ========================================
+
+    socket.on(
+      'piece-selected',
+      data => {
+        const code = socket.data.roomCode
+
+        if (!code) return
+
+        if (
+          !data ||
+          !Number.isInteger(data.row) ||
+          !Number.isInteger(data.col)
+        ) {
+          return
+        }
+
+        socket
+          .to(code)
+          .emit('piece-selected', data)
+      }
+    )
+
     // ========================================
     // إعادة المباراة
     // ========================================
