@@ -5981,7 +5981,7 @@ function startKhaledComputerMove(moves) {
 
     // الحد الأعلى عشر دقائق للحركة الواحدة.
     maxTimeMs:
-      600000
+      2000
   })
 }
 
