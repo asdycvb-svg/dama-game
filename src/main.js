@@ -3857,15 +3857,10 @@ function startOnlineGame() {
 
   createBoard()
 
-  // كل لاعب يشوف قطعه من أسفل الرقعة.
-  // صاحب الروم حليبي، والمنضم أسود وتنعكس له الرقعة فقط بصريًا.
-  const onlineBoard =
-    document.querySelector('#board')
-
-  onlineBoard?.classList.toggle(
-    'board-flipped',
-    onlinePlayerColor === 'black'
-  )
+  // كل لاعب يشوف قطعه من أسفل الرقعة بدون تدوير الرقعة نفسها.
+  // صاحب الروم (الحليبي) يبقى بالاتجاه الطبيعي،
+  // والمنضم (الأسود) نعكس ترتيب المربعات بصريًا فقط.
+  orientOnlineBoardForLocalPlayer()
 
   document
     .querySelector('#exitGameBtn')
@@ -3876,6 +3871,47 @@ function startOnlineGame() {
 
   updatePlayerHighlight()
   updateOnlineTurnUI()
+}
+
+
+// ========================================
+// اتجاه الرقعة لكل لاعب أونلاين
+// ========================================
+
+function orientOnlineBoardForLocalPlayer() {
+  const board =
+    document.querySelector('#board')
+
+  if (!board) return
+
+  board.classList.remove(
+    'board-black-view',
+    'board-flipped'
+  )
+
+  // الحليبي موجود أصلًا أسفل الرقعة بالترتيب الطبيعي.
+  if (
+    !onlineMode ||
+    onlinePlayerColor !== 'black'
+  ) {
+    return
+  }
+
+  // الأسود يبدأ في الصفوف العلوية منطقيًا.
+  // نعكس ترتيب عناصر المربعات فقط حتى تظهر قطعه أسفل شاشته،
+  // مع بقاء data-row / data-col كما هي، لذلك قوانين اللعب لا تتغير.
+  const squares =
+    Array.from(board.children)
+
+  squares
+    .reverse()
+    .forEach(square => {
+      board.appendChild(square)
+    })
+
+  board.classList.add(
+    'board-black-view'
+  )
 }
 
 

@@ -3911,44 +3911,53 @@ transform: none;
 
 
 /* ========================================
-   تحديث الأونلاين + خلفية اللعب + عنوان الرئيسية
+   اتجاه الأونلاين + مظهر اللعب الحديث الخفيف
    ======================================== */
 
-/* اللاعب الأسود يشاهد جهته من أسفل الرقعة،
-   بدون تغيير إحداثيات أو قوانين اللعب. */
-.board.board-flipped {
-  transform: rotate(180deg);
+/*
+   لا ندوّر الرقعة نهائيًا.
+   اللاعب الأسود يأخذ منظوره من ترتيب المربعات في JavaScript،
+   لذلك تبقى الخامات والحواف والنصوص مستقيمة وطبيعية.
+*/
+.board.board-flipped,
+.board.board-black-view {
+  transform: none !important;
 }
 
-/* رمز الملك يرجع مستقيم بعد قلب الرقعة. */
-.board.board-flipped .king-symbol {
-  transform: rotate(180deg);
+.board.board-flipped .king-symbol,
+.board.board-black-view .king-symbol {
+  transform: none !important;
 }
 
-/* نفس لوحة الخلفية الموجودة في الرئيسية تظهر أثناء اللعب. */
+/* رجعنا خلفية اللعب هادئة مثل قبل، مع لمسة مودرن بسيطة فقط. */
 .game-page {
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
   isolation: isolate;
+  background:
+    radial-gradient(
+      circle at 50% 18%,
+      rgba(126, 84, 49, .10),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 18% 78%,
+      rgba(106, 70, 44, .055),
+      transparent 28%
+    ),
+    linear-gradient(
+      180deg,
+      #111214 0%,
+      #0d0e10 58%,
+      #0a0b0c 100%
+    ) !important;
 }
 
+/* إلغاء صورة الدامة الكبيرة التي كانت خلف الرقعة. */
 .game-page::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-
-  background:
-    linear-gradient(
-      rgba(13, 13, 13, 0.68),
-      rgba(13, 13, 13, 0.68)
-    ),
-    url('/dama-bg.jpg');
-
-  background-size: 90% auto;
-  background-position: center;
-  background-repeat: no-repeat;
+  content: none !important;
+  display: none !important;
+  background: none !important;
 }
 
 .game-page > * {
@@ -3956,28 +3965,108 @@ transform: none;
   z-index: 1;
 }
 
+/* لمسة مودرن خفيفة حول معلومات المباراة، بدون مبالغة. */
+.game-header {
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.055);
+  border-radius: 14px;
+  background: rgba(255,255,255,.025);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.025),
+    0 8px 26px rgba(0,0,0,.12);
+}
+
+.turn-box {
+  min-height: 56px;
+  padding: 8px 18px;
+  border: 1px solid rgba(228, 196, 154, .10);
+  border-radius: 15px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(104, 68, 42, .12),
+      rgba(255,255,255,.018)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.035),
+    0 10px 28px rgba(0,0,0,.10);
+}
+
+/* الرقعة تبقى هي البطل، فقط إطار وظل أنظف. */
+.board {
+  border-radius: 11px;
+  box-shadow:
+    0 22px 52px rgba(0,0,0,.42),
+    0 0 0 1px rgba(224,188,141,.14);
+}
+
+.players {
+  gap: 12px;
+}
+
+.player {
+  border: 1px solid rgba(255,255,255,.045);
+  background: rgba(255,255,255,.018);
+  transition:
+    background .15s ease,
+    border-color .15s ease,
+    transform .15s ease;
+}
+
+.player.active-player {
+  border-color: rgba(224,188,141,.14);
+  background: rgba(98,64,40,.18);
+}
+
 /* توسيع اللوحة الخشبية خلف كلمة الدامة يمين ويسار. */
 .game-title {
-  min-width: 350px;
-  padding-left: 62px;
-  padding-right: 62px;
+  min-width: 370px;
+  padding-left: 72px;
+  padding-right: 72px;
 }
 
 @media (max-width: 650px) {
-  /* نحافظ على تسريع الجوال الموجود ونضيف القلب للاعب الأسود. */
-  .board.board-flipped {
-    transform: rotate(180deg) translateZ(0);
+  .board.board-flipped,
+  .board.board-black-view {
+    transform: translateZ(0) !important;
   }
 
-  .game-page::before {
-    background-size: 135% auto;
-    background-position: center;
+  .game-page {
+    background:
+      radial-gradient(
+        circle at 50% 14%,
+        rgba(126, 84, 49, .085),
+        transparent 30%
+      ),
+      linear-gradient(
+        180deg,
+        #111214 0%,
+        #0c0d0f 100%
+      ) !important;
+  }
+
+  .game-header {
+    padding: 10px 11px;
+    border-radius: 12px;
+  }
+
+  .turn-box {
+    min-height: 50px;
+    padding: 7px 14px;
+    border-radius: 13px;
+  }
+
+  .board {
+    border-radius: 9px;
+    box-shadow:
+      0 14px 34px rgba(0,0,0,.34),
+      0 0 0 1px rgba(224,188,141,.12);
   }
 
   .game-title {
-    width: min(285px, 88vw);
+    width: min(305px, 90vw);
     min-width: 0;
-    padding-left: 42px;
-    padding-right: 42px;
+    padding-left: 50px;
+    padding-right: 50px;
   }
 }
