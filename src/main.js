@@ -171,7 +171,10 @@ function playMoveSound() {
 // ========================================
 
 const ONLINE_SERVER_URL =
-  `${window.location.protocol}//${window.location.hostname}:3001`
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.DEV
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : window.location.origin)
 
 const socket = io(ONLINE_SERVER_URL, { autoConnect:true, reconnection:true, reconnectionAttempts:Infinity });
 
