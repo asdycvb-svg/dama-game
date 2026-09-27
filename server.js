@@ -1,4 +1,5 @@
 import path from 'path'
+import { randomBytes } from 'crypto'
 import { fileURLToPath } from 'url'
 import express from 'express'
 import { createServer } from 'http'
@@ -200,6 +201,21 @@ function closeRoomForSocket(socket) {
     }
   }
 
+  const roomMembers =
+    io.sockets.adapter.rooms.get(code)
+
+  for (const memberId of roomMembers || []) {
+    if (memberId === socket.id || memberId === otherId) continue
+
+    const spectator =
+      io.sockets.sockets.get(memberId)
+
+    if (spectator) {
+      spectator.leave(code)
+      spectator.data.spectatingRoomCode = null
+    }
+  }
+
   socket.leave(code)
   clearSocketRoomData(socket)
 
@@ -247,12 +263,15 @@ io.on(
 
         const roomSettings =
           normalizeRoomSettings(settings)
+        const watchKey = randomBytes(24).toString('hex')
 
         rooms.set(
           code,
           {
             host: socket.id,
             hostName: normalizePlayerName(settings?.playerName),
+            watchKey,
+            moveHistory: [],
             guest: null,
             turn: 'cream',
             settings: roomSettings,
@@ -278,7 +297,8 @@ io.on(
     success: true,
     code,
     color: "cream",
-    settings: rooms.get(code)?.settings
+    settings: rooms.get(code)?.settings,
+    watchKey
   });
 }
 
@@ -364,7 +384,8 @@ if (typeof callback === "function") {
     code: code,
     color: 'black',
     settings: room.settings,
-    opponentName: room.hostName
+    opponentName: room.hostName,
+    watchKey: room.watchKey
   });
 }
 
@@ -425,6 +446,37 @@ if (typeof callback === "function") {
           return
         }
 
+        const coordinates = [
+          move.fromRow,
+          move.fromCol,
+          move.row,
+          move.col
+        ]
+
+        if (
+          coordinates.some(value =>
+            !Number.isInteger(value) || value < 0 || value > 7
+          ) ||
+          typeof move.capture !== 'boolean' ||
+          typeof move.continueCapture !== 'boolean'
+        ) {
+          return
+        }
+
+        if (
+          move.capture &&
+          (!Number.isInteger(move.capturedRow) ||
+            !Number.isInteger(move.capturedCol) ||
+            move.capturedRow < 0 ||
+            move.capturedRow > 7 ||
+            move.capturedCol < 0 ||
+            move.capturedCol > 7)
+        ) {
+          return
+        }
+
+        if (move.continueCapture && !move.capture) return
+
         if (room.settings?.mode === 'time') {
           if (updateRoomClock(room, code)) return
           if (room.timerStarted !== playerColor) return
@@ -440,6 +492,14 @@ if (typeof callback === "function") {
           return
         }
 
+        const expectedNextTurn = move.continueCapture
+          ? playerColor
+          : playerColor === 'cream' ? 'black' : 'cream'
+
+        if (nextTurn !== expectedNextTurn) return
+
+        room.moveHistory.push(move)
+
         room.turn = nextTurn
         if (room.settings?.mode === 'time') {
           startRoomClock(room, code, nextTurn)
@@ -453,6 +513,75 @@ if (typeof callback === "function") {
           )
       }
     )
+
+    socket.on('spectate-room', (request, callback) => {
+      const code = String(request?.code || '')
+      const room = rooms.get(code)
+
+      if (
+        !room ||
+        !room.guest ||
+        room.watchKey !== request?.watchKey ||
+        room.finished
+      ) {
+        callback?.({
+          success: false,
+          message: 'المباراة غير متاحة للمشاهدة'
+        })
+        return
+      }
+
+      if (socket.id === room.host || socket.id === room.guest) {
+        callback?.({
+          success: false,
+          message: 'أنت أحد لاعبي هذه المباراة'
+        })
+        return
+      }
+
+      if (
+        room.settings?.mode === 'time' &&
+        updateRoomClock(room, code)
+      ) {
+        callback?.({
+          success: false,
+          message: 'انتهى وقت المباراة'
+        })
+        return
+      }
+
+      socket.join(code)
+      socket.data.spectatingRoomCode = code
+      callback?.({
+        success: true,
+        code,
+        hostName: room.hostName,
+        guestName: room.guestName,
+        settings: room.settings,
+        turn: room.turn,
+        moveHistory: room.moveHistory,
+        clocks: {
+          cream: Math.ceil(room.timers.cream / 1000),
+          black: Math.ceil(room.timers.black / 1000)
+        }
+      })
+    })
+
+    socket.on('stop-spectating', () => {
+      const code = socket.data.spectatingRoomCode
+      if (!code) return
+      socket.leave(code)
+      socket.data.spectatingRoomCode = null
+    })
+
+    socket.on('game-finished', () => {
+      const code = socket.data.roomCode
+      const room = code && rooms.get(code)
+      if (!room) return
+      room.finished = true
+      clearRoomClock(room)
+      io.to(code).emit('spectated-game-finished')
+    })
 
 
 
@@ -470,7 +599,11 @@ if (typeof callback === "function") {
         if (
           !data ||
           !Number.isInteger(data.row) ||
-          !Number.isInteger(data.col)
+          !Number.isInteger(data.col) ||
+          data.row < 0 ||
+          data.row > 7 ||
+          data.col < 0 ||
+          data.col > 7
         ) {
           return
         }
@@ -506,6 +639,7 @@ if (typeof callback === "function") {
 
         room.turn = 'cream'
         room.finished = false
+        room.moveHistory = []
         clearRoomClock(room)
         room.timers = {
           cream: (room.settings.minutes || 0) * 60_000,

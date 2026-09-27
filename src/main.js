@@ -181,6 +181,7 @@ const socket = io(ONLINE_SERVER_URL, { autoConnect:true, reconnection:true, reco
 let onlineRoomCode = null
 let onlinePlayerColor = null
 let onlineMode = false
+let spectatingMode = false
 let onlineOpponentConnected = false
 let onlineOpponentRating = null
 let onlineOpponentName = 'صديقك'
@@ -207,6 +208,11 @@ socket.on('clock-update', data => {
 
 socket.on('time-ended', (data) => {
   if (!onlineMode || gameOver) return
+
+  if (spectatingMode) {
+    setTurnText('انتهت المباراة')
+    return
+  }
 
   const won = data.winner === onlinePlayerColor
   finishGame(won ? 'فزت! انتهى وقت الخصم ⏱️' : 'خسرت! انتهى وقتك ⏱️')
@@ -243,6 +249,9 @@ socket.on('player-joined', (data) => {
   if (!onlineMode) return
 
   onlineOpponentConnected = true
+  document.querySelector('#roomInviteDock')?.remove()
+  document.querySelector('#roomInvitePage')?.remove()
+  setActivePresenceRoom(onlineRoomCode, currentRoomWatchKey)
   onlineOpponentName = data?.playerName || 'صديقك'
   const opponentNameLabel =
     document.querySelector('#onlineOpponentName')
@@ -259,14 +268,19 @@ socket.on('player-joined', (data) => {
       '#matchTimer'
     )
   ) {
-    resetMatchTimer()
+    startMatchTimer()
   }
 })
 
 socket.on('game-move', (move) => {
   if (!onlineMode) return
 
-  applyRemoteOnlineMove(move)
+  if (spectatingMode) {
+    applySpectatorMove(move)
+  }
+  else {
+    applyRemoteOnlineMove(move)
+  }
   document.querySelectorAll('.selected-piece')
 .forEach(p => p.classList.remove('selected-piece'));
 })
@@ -295,11 +309,22 @@ socket.on('restart-game', () => {
     ?.remove()
 
   onlineOpponentConnected = true
+  if (spectatingMode) {
+    resetSpectatorBoard()
+    return
+  }
+
+  setActivePresenceRoom(onlineRoomCode, currentRoomWatchKey)
   startOnlineGame()
 })
 
 socket.on('player-left', () => {
   if (!onlineMode) return
+
+  if (spectatingMode) {
+    setTurnText('انتهت المباراة')
+    return
+  }
 
   onlineOpponentConnected = false
 
@@ -307,6 +332,12 @@ socket.on('player-left', () => {
     finishGame(
       'فزت! خصمك انسحب من المباراة 👑'
     )
+  }
+})
+
+socket.on('spectated-game-finished', () => {
+  if (spectatingMode) {
+    setTurnText('انتهت المباراة')
   }
 })
 
@@ -327,6 +358,710 @@ let selectedPiece = null
 let currentLevel = null
 
 let currentAuthUser = null
+
+let presenceInterval = null
+let friendsRefreshInterval = null
+let activePresenceRoom = null
+let activePresenceWatchKey = null
+let currentRoomWatchKey = null
+let loadingFriends = false
+let presencePageHideBound = false
+let gameInviteRefreshInterval = null
+let checkingGameInvites = false
+let gameInvitesUnavailable = false
+let lastGameInviteError = ''
+let pendingGameInvites = []
+
+async function publishPresence(isOnline) {
+  if (!currentAuthUser) return
+
+  const { error } = await supabase.rpc(
+    'set_my_presence',
+    {
+      p_is_online: isOnline,
+      p_active_room: isOnline ? activePresenceRoom : null,
+      p_active_watch_key: isOnline ? activePresenceWatchKey : null
+    }
+  )
+
+  if (error) {
+    console.warn('تعذر تحديث حالة الاتصال:', error.message)
+  }
+}
+
+function startPresenceTracking() {
+  if (!currentAuthUser || presenceInterval) return
+
+  publishPresence(true)
+  presenceInterval = setInterval(
+    () => publishPresence(true),
+    25000
+  )
+  checkPendingGameInvites()
+  gameInviteRefreshInterval = setInterval(
+    checkPendingGameInvites,
+    10000
+  )
+
+  if (!presencePageHideBound) {
+    window.addEventListener('pagehide', () => {
+      if (!currentAuthUser) return
+
+      supabase.rpc('set_my_presence', {
+        p_is_online: false,
+        p_active_room: null,
+        p_active_watch_key: null
+      })
+    })
+    presencePageHideBound = true
+  }
+}
+
+async function stopPresenceTracking() {
+  if (presenceInterval) {
+    clearInterval(presenceInterval)
+    presenceInterval = null
+  }
+
+  if (gameInviteRefreshInterval) {
+    clearInterval(gameInviteRefreshInterval)
+    gameInviteRefreshInterval = null
+  }
+
+  pendingGameInvites = []
+  renderGameInvitesList()
+
+  await publishPresence(false)
+}
+
+function setActivePresenceRoom(roomCode, watchKey) {
+  activePresenceRoom = roomCode || null
+  activePresenceWatchKey = watchKey || null
+  publishPresence(true)
+}
+
+async function checkPendingGameInvites() {
+  if (!currentAuthUser || checkingGameInvites) return
+
+  checkingGameInvites = true
+  const { data, error } = await supabase.rpc('get_pending_game_invites')
+  checkingGameInvites = false
+
+  if (error) {
+    gameInvitesUnavailable = true
+    const errorKey = `${error.code || ''}:${error.message || ''}`
+    if (errorKey !== lastGameInviteError) {
+      console.warn('تعذر تحميل دعوات اللعب. تحقق من ترحيل الدعوات في Supabase:', error.message)
+      lastGameInviteError = errorKey
+    }
+    renderGameInvitesList()
+    return
+  }
+
+  gameInvitesUnavailable = false
+  lastGameInviteError = ''
+  pendingGameInvites = data || []
+  renderGameInvitesList()
+}
+
+function renderGameInvitesList() {
+  const list = document.querySelector('#gameInvitesList')
+  const count = document.querySelector('#gameInvitesCount')
+  if (count) count.textContent = pendingGameInvites.length
+  if (!list) return
+
+  list.replaceChildren()
+  if (pendingGameInvites.length === 0) {
+    list.append(createFriendEmptyState(
+      gameInvitesUnavailable
+        ? 'تعذر تحميل الطلبات. شغّل ترحيل الدعوات في Supabase.'
+        : 'لا توجد طلبات لعب واردة'
+    ))
+    return
+  }
+
+  pendingGameInvites.forEach(invite => {
+    const row = document.createElement('div')
+    row.className = 'friend-list-item game-invite-list-item'
+
+    const copy = document.createElement('div')
+    copy.className = 'friend-list-copy'
+    const name = document.createElement('strong')
+    name.textContent = invite.sender_name
+    const detail = document.createElement('small')
+    const expiresInMinutes = Math.max(
+      1,
+      Math.ceil((new Date(invite.expires_at).getTime() - Date.now()) / 60000)
+    )
+    detail.textContent = `دعوة للعب • تنتهي خلال ${expiresInMinutes} د`
+    copy.append(name, detail)
+
+    const actions = document.createElement('div')
+    actions.className = 'friend-request-actions'
+
+    const accept = document.createElement('button')
+    accept.type = 'button'
+    accept.className = 'friend-accept-btn'
+    accept.textContent = 'دخول'
+    accept.addEventListener('click', async () => {
+      if (document.querySelector('#board') && !gameOver) {
+        setFriendMessage('أنه المباراة الحالية أولًا.')
+        return
+      }
+
+      accept.disabled = true
+      const joined = await joinInvitedRoom(invite, detail)
+      if (!joined) {
+        accept.disabled = false
+        return
+      }
+
+      const { error } = await supabase.rpc('respond_game_invite', {
+        p_invite_id: invite.invite_id,
+        p_accept: true
+      })
+      if (error) console.warn('تعذر تحديث حالة الدعوة:', error.message)
+      pendingGameInvites = pendingGameInvites.filter(
+        pending => pending.invite_id !== invite.invite_id
+      )
+      renderGameInvitesList()
+    })
+
+    const decline = document.createElement('button')
+    decline.type = 'button'
+    decline.className = 'friend-decline-btn'
+    decline.textContent = 'رفض'
+    decline.addEventListener('click', async () => {
+      decline.disabled = true
+      const { error } = await supabase.rpc('respond_game_invite', {
+        p_invite_id: invite.invite_id,
+        p_accept: false
+      })
+      if (error) {
+        setFriendMessage(error.message)
+        decline.disabled = false
+        return
+      }
+      pendingGameInvites = pendingGameInvites.filter(
+        pending => pending.invite_id !== invite.invite_id
+      )
+      renderGameInvitesList()
+    })
+
+    actions.append(accept, decline)
+    row.append(copy, actions)
+    list.append(row)
+  })
+}
+
+async function joinInvitedRoom(invite, messageElement) {
+  if (!socket.connected) {
+    try {
+      await new Promise((resolve, reject) => {
+        socket.once('connect', resolve)
+        socket.once('connect_error', reject)
+        socket.connect()
+      })
+    }
+    catch (error) {
+      messageElement.textContent = 'تعذر الاتصال بسيرفر اللعب.'
+      return false
+    }
+  }
+
+  return new Promise(resolve => {
+    socket.emit('join-room', invite.room_code, playerProfile.name, response => {
+      if (!response?.success) {
+        messageElement.textContent = response?.message || 'الروم لم يعد متاحًا.'
+        resolve(false)
+        return
+      }
+
+      onlineRoomCode = response.code
+      currentRoomWatchKey = response.watchKey
+      onlinePlayerColor = response.color
+      onlineMode = true
+      spectatingMode = false
+      onlineOpponentConnected = true
+      onlineOpponentRating = null
+      onlineOpponentName = response.opponentName || invite.sender_name
+      if (response.settings) onlineRoomSettings = response.settings
+      currentLevel = 'online'
+      setActivePresenceRoom(onlineRoomCode, currentRoomWatchKey)
+      startOnlineGame()
+      resolve(true)
+    })
+  })
+}
+
+function openFriendsView() {
+  refreshFriendsView()
+  stopFriendsRefresh()
+  friendsRefreshInterval = setInterval(
+    refreshFriendsView,
+    12000
+  )
+}
+
+function stopFriendsRefresh() {
+  if (friendsRefreshInterval) {
+    clearInterval(friendsRefreshInterval)
+    friendsRefreshInterval = null
+  }
+}
+
+function showFriendsInbox(view) {
+  const homePanel = document.querySelector('#friendsHomePanel')
+  const requestsPanel = document.querySelector('#friendRequestsPanel')
+  const gameInvitesPanel = document.querySelector('#gameInvitesPanel')
+
+  homePanel.hidden = view !== 'home'
+  requestsPanel.hidden = view !== 'friend-requests'
+  gameInvitesPanel.hidden = view !== 'game-invites'
+
+  if (view === 'friend-requests') {
+    refreshFriendsView()
+  }
+  else if (view === 'game-invites') {
+    checkPendingGameInvites()
+  }
+}
+
+async function refreshFriendsView() {
+  const authNotice = document.querySelector('#friendsAuthNotice')
+  const content = document.querySelector('#friendsContent')
+  const message = document.querySelector('#friendActionMessage')
+
+  if (!currentAuthUser) {
+    if (authNotice) authNotice.hidden = false
+    if (content) content.hidden = true
+    return
+  }
+
+  if (authNotice) authNotice.hidden = true
+  if (content) content.hidden = false
+  if (loadingFriends) return
+
+  loadingFriends = true
+  const [profileResult, codeResult, requestsResult, friendsResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('friend_code')
+      .eq('id', currentAuthUser.id)
+      .maybeSingle(),
+    supabase.rpc('get_my_friend_code'),
+    supabase.rpc('get_friend_requests'),
+    supabase.rpc('get_my_friends')
+  ])
+  loadingFriends = false
+
+  const friendCode =
+    profileResult.data?.friend_code || codeResult.data
+
+  document.querySelector('#myFriendCode').textContent =
+    friendCode || '-----'
+
+  const codeError = friendCode
+    ? null
+    : profileResult.error || codeResult.error
+  const listError = requestsResult.error || friendsResult.error
+
+  if (codeError || !friendCode) {
+    if (message) {
+      message.textContent =
+        'معرّفك غير متاح. شغّل ترحيل الأصدقاء في Supabase ثم حدّث الصفحة.'
+    }
+
+    const error = codeError || listError
+    if (error) {
+      console.warn('تعذر تحميل بيانات الأصدقاء:', error.message)
+    }
+  }
+  else if (listError) {
+    if (message) message.textContent = 'المعرّف جاهز، لكن تعذر تحميل الطلبات أو الأصدقاء.'
+    console.warn('تعذر تحميل قائمة الأصدقاء:', listError.message)
+  }
+  else if (message) {
+    message.textContent = ''
+  }
+
+  const requests = requestsResult.data || []
+  const friends = friendsResult.data || []
+  document.querySelector('#friendRequestsCount').textContent = requests.length
+  document.querySelector('#friendsOnlineCount').textContent =
+    friends.filter(friend => friend.is_online).length
+
+  renderFriendRequests(requests)
+  renderFriendsList(friends)
+}
+
+function renderFriendRequests(requests) {
+  const list = document.querySelector('#friendRequestsList')
+  const count = document.querySelector('#friendRequestsCount')
+  if (count) count.textContent = requests.length
+  if (!list) return
+  list.replaceChildren()
+
+  if (requests.length === 0) {
+    list.append(createFriendEmptyState('لا توجد طلبات جديدة'))
+    return
+  }
+
+  requests.forEach(request => {
+    const row = document.createElement('div')
+    row.className = 'friend-list-item'
+
+    const copy = document.createElement('div')
+    copy.className = 'friend-list-copy'
+    const name = document.createElement('strong')
+    name.textContent = request.sender_name
+    const code = document.createElement('small')
+    code.textContent = `المعرّف ${request.sender_code}`
+    copy.append(name, code)
+
+    const actions = document.createElement('div')
+    actions.className = 'friend-request-actions'
+    actions.append(
+      createRequestAction(request.request_id, true),
+      createRequestAction(request.request_id, false)
+    )
+    row.append(copy, actions)
+    list.append(row)
+  })
+}
+
+function createRequestAction(requestId, accept) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = accept ? 'friend-accept-btn' : 'friend-decline-btn'
+  button.textContent = accept ? 'قبول' : 'رفض'
+  button.addEventListener('click', async () => {
+    const { error } = await supabase.rpc('respond_friend_request', {
+      p_request_id: requestId,
+      p_accept: accept
+    })
+    if (error) {
+      setFriendMessage(error.message)
+      return
+    }
+    refreshFriendsView()
+  })
+  return button
+}
+
+function renderFriendsList(friends) {
+  const list = document.querySelector('#friendsList')
+  if (!list) return
+  list.replaceChildren()
+
+  if (friends.length === 0) {
+    list.append(createFriendEmptyState('لم تضف أصدقاء بعد'))
+    return
+  }
+
+  friends.forEach(friend => {
+    const row = document.createElement('div')
+    row.className = 'friend-list-item'
+
+    const status = document.createElement('span')
+    status.className = friend.is_online
+      ? 'friend-presence-dot is-online'
+      : 'friend-presence-dot'
+    status.setAttribute('aria-label', friend.is_online ? 'متصل' : 'غير متصل')
+
+    const copy = document.createElement('div')
+    copy.className = 'friend-list-copy'
+    const name = document.createElement('strong')
+    name.textContent = friend.friend_name
+    const presence = document.createElement('small')
+    presence.textContent = friend.is_online
+      ? 'متصل الآن'
+      : formatFriendLastSeen(friend.last_seen)
+    copy.append(name, presence)
+
+    row.append(status, copy)
+    if (friend.is_online && friend.active_room && friend.active_watch_key) {
+      const watchButton = document.createElement('button')
+      watchButton.type = 'button'
+      watchButton.className = 'friend-watch-btn'
+      watchButton.textContent = 'مشاهدة'
+      watchButton.addEventListener('click', () => watchFriendMatch(friend))
+      row.append(watchButton)
+    }
+
+    list.append(row)
+  })
+}
+
+async function watchFriendMatch(friend) {
+  stopFriendsRefresh()
+
+  if (!socket.connected) {
+    await new Promise((resolve, reject) => {
+      socket.once('connect', resolve)
+      socket.once('connect_error', reject)
+      socket.connect()
+    })
+  }
+
+  socket.timeout(10000).emit(
+    'spectate-room',
+    {
+      code: friend.active_room,
+      watchKey: friend.active_watch_key
+    },
+    (socketError, response) => {
+      if (socketError) {
+        alert('لم يستجب سيرفر اللعب. تحقق من عنوان VITE_SOCKET_URL وتشغيل الخادم.');
+        return
+      }
+
+      if (!response?.success) {
+        setFriendMessage(response?.message || 'تعذرت مشاهدة المباراة')
+        return
+      }
+
+      spectatingMode = true
+      onlineMode = true
+      onlineRoomCode = response.code
+      onlinePlayerColor = null
+      onlineOpponentConnected = true
+      onlineRoomSettings = response.settings || { mode: 'no-time' }
+      onlineClocks = response.clocks || { cream: 0, black: 0 }
+      gameOver = false
+      currentTurn = response.turn || 'cream'
+      currentLevel = 'spectator'
+      renderSpectatorGame(response)
+    }
+  )
+}
+
+async function openRoomInviteView() {
+  if (document.querySelector('#roomInvitePage')) return
+
+  const page = document.createElement('section')
+  page.id = 'roomInvitePage'
+  page.className = 'room-invite-page'
+  page.innerHTML = `
+    <div class="room-invite-page-content">
+      <header class="room-invite-page-header">
+        <button id="roomInviteBackBtn" class="profile-back-btn" type="button">← رجوع</button>
+        <div>
+          <h2>دعوة صديق للعب</h2>
+          <p>اختر صديقًا لإرسال دعوة إلى الروم ${onlineRoomCode}.</p>
+        </div>
+      </header>
+      <div id="roomInvitePicker" class="room-invite-picker"></div>
+      <p id="roomInviteMessage" class="room-invite-message" aria-live="polite"></p>
+    </div>
+  `
+  document.body.append(page)
+
+  document.querySelector('#roomInviteBackBtn').onclick = () => page.remove()
+
+  const picker = document.querySelector('#roomInvitePicker')
+  picker.append(createFriendEmptyState('جاري تحميل الأصدقاء...'))
+
+  if (!currentAuthUser) {
+    picker.replaceChildren(createFriendEmptyState('سجّل الدخول لإرسال دعوة.'))
+    return
+  }
+
+  const { data, error } = await supabase.rpc('get_my_friends')
+  if (!page.isConnected) return
+  picker.replaceChildren()
+
+  if (error) {
+    picker.append(createFriendEmptyState('تعذر تحميل قائمة الأصدقاء.'))
+    return
+  }
+
+  const friends = data || []
+  if (friends.length === 0) {
+    picker.append(createFriendEmptyState('أضف صديقًا أولًا من قائمة الأصدقاء.'))
+    return
+  }
+
+  friends.forEach(friend => {
+    const row = document.createElement('div')
+    row.className = 'room-invite-friend'
+
+    const copy = document.createElement('div')
+    copy.className = 'friend-list-copy'
+    const name = document.createElement('strong')
+    name.textContent = friend.friend_name
+    const status = document.createElement('small')
+    status.textContent = friend.is_online ? 'متصل الآن' : 'غير متصل'
+    copy.append(name, status)
+
+    const inviteButton = document.createElement('button')
+    inviteButton.type = 'button'
+    inviteButton.className = 'friend-watch-btn'
+    inviteButton.textContent = 'إرسال'
+    inviteButton.addEventListener('click', async () => {
+      inviteButton.disabled = true
+      const { error: inviteError } = await supabase.rpc('send_game_invite', {
+        p_friend_code: friend.friend_code,
+        p_room_code: onlineRoomCode,
+        p_watch_key: currentRoomWatchKey
+      })
+
+      if (inviteError) {
+        inviteButton.disabled = false
+        const functionMissing =
+          inviteError.code === 'PGRST202' || inviteError.status === 404
+
+        setFriendMessage(
+          functionMissing
+            ? 'دعوات اللعب غير مفعّلة على قاعدة البيانات. شغّل ترحيل game_invites في Supabase ثم أعد المحاولة.'
+            : inviteError.message
+        )
+        return
+      }
+
+      inviteButton.textContent = 'تم الإرسال'
+      setFriendMessage(`أُرسلت الدعوة إلى ${friend.friend_name}، وصلاحيتها 10 دقائق.`)
+    })
+
+    row.append(copy, inviteButton)
+    picker.append(row)
+  })
+}
+
+function renderSpectatorGame(match) {
+  document.querySelector('#app').innerHTML = `
+    <main class="game-page spectator-game-page">
+      <div class="game-header">
+        <button id="exitSpectatingBtn" class="exit-game-btn" type="button">رجوع</button>
+        <div class="game-info">
+          <h2>مشاهدة مباراة</h2>
+          <p>روم ${match.code}</p>
+        </div>
+      </div>
+
+      <div class="spectator-player-row">
+        <div class="spectator-player-info">
+          <span class="player-piece cream-player"></span>
+          <strong id="spectatorCreamName"></strong>
+          <strong id="creamClock" class="player-clock" hidden>00:00</strong>
+        </div>
+        <div class="spectator-player-info">
+          <span class="player-piece black-player"></span>
+          <strong id="spectatorBlackName"></strong>
+          <strong id="blackClock" class="player-clock" hidden>00:00</strong>
+        </div>
+      </div>
+
+      <div id="board" class="board"></div>
+
+      <div class="turn-box spectator-turn-box">
+        <span id="turnText">المشاهدة مباشرة</span>
+      </div>
+    </main>
+  `
+
+  document.querySelector('#spectatorCreamName').textContent =
+    match.hostName || 'الحليبي'
+  document.querySelector('#spectatorBlackName').textContent =
+    match.guestName || 'الأسود'
+
+  document.querySelector('#exitSpectatingBtn').onclick = () => {
+    socket.emit('stop-spectating')
+    spectatingMode = false
+    onlineMode = false
+    onlineRoomCode = null
+    onlineOpponentConnected = false
+    showHome()
+  }
+
+  createBoard()
+  ;(match.moveHistory || []).forEach(move => {
+    applySpectatorMove(move, false)
+  })
+  renderOnlineClocks()
+}
+
+function resetSpectatorBoard() {
+  document.querySelector('#board').replaceChildren()
+  createBoard()
+  currentTurn = 'cream'
+  setTurnText('المشاهدة مباشرة')
+}
+
+function applySpectatorMove(move, playSound = true) {
+  if (!move) return
+
+  const piece = getPieceAt(
+    Number(move.fromRow),
+    Number(move.fromCol)
+  )
+  const target = getSquare(
+    Number(move.row),
+    Number(move.col)
+  )
+
+  if (!piece || !target) return
+
+  if (move.capture) {
+    getPieceAt(
+      Number(move.capturedRow),
+      Number(move.capturedCol)
+    )?.remove()
+  }
+
+  target.appendChild(piece)
+  if (playSound) playMoveSound()
+  promoteIfNeeded(piece)
+  currentTurn = move.nextTurn || getOppositeColor(move.color)
+}
+
+function createFriendEmptyState(text) {
+  const empty = document.createElement('p')
+  empty.className = 'friend-empty-state'
+  empty.textContent = text
+  return empty
+}
+
+function formatFriendLastSeen(value) {
+  if (!value) return 'لا يوجد ظهور سابق'
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime())
+  const minutes = Math.floor(elapsed / 60000)
+  if (minutes < 1) return 'آخر ظهور قبل لحظات'
+  if (minutes < 60) return `آخر ظهور قبل ${minutes} د`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `آخر ظهور قبل ${hours} س`
+  return `آخر ظهور ${new Date(value).toLocaleDateString('ar')}`
+}
+
+async function sendFriendRequestFromForm(event) {
+  event.preventDefault()
+  const input = document.querySelector('#friendCodeInput')
+  const code = input.value.trim()
+  if (!/^\d{5}$/.test(code)) {
+    setFriendMessage('أدخل معرّفًا من 5 أرقام')
+    return
+  }
+
+  const { data, error } = await supabase.rpc('send_friend_request', {
+    p_friend_code: code
+  })
+  if (error) {
+    setFriendMessage(error.message)
+    return
+  }
+
+  input.value = ''
+  setFriendMessage(`تم إرسال الطلب إلى ${data}`)
+  refreshFriendsView()
+}
+
+function setFriendMessage(text) {
+  const message =
+    document.querySelector('#roomInviteMessage') ||
+    document.querySelector('#friendActionMessage')
+  if (message) message.textContent = text
+}
+
 async function loadCloudProfile(user) {
 
   const { data, error } =
@@ -622,6 +1357,9 @@ const PROFILE_KEY = 'damagame_profile_v1'
 
 let currentGameMoves = 0
 let currentGameRecorded = false
+let trainingUndoSnapshots = []
+let trainingTurnStartSnapshot = null
+let trainingLastMoveExplanation = ''
 let pendingProfileSave =
   Promise.resolve()
 
@@ -629,47 +1367,30 @@ let pendingProfileSave =
 // ♛ نظام التصنيف بالنقاط - أونلاين فقط
 // ========================================
 
-const RATING_START = 400
-const RATING_MIN = 400
-const RATING_MAX = 3000
-const RATING_K = 24
+const RATING_START = 0
+const RATING_MIN = 0
+const RATING_MAX = Infinity
+const RATING_K = 14
+const LOCAL_RATING_RESET_KEY = 'damagame_rating_zero_reset_v1'
 
 const RATING_TIERS = [
   {
     key: 'beginner',
     label: 'مبتدئ',
     min: 0,
-    max: 599
-  },
-  {
-    key: 'rising',
-    label: 'مبتدئ متقدم',
-    min: 600,
-    max: 899
+    max: 40
   },
   {
     key: 'intermediate',
     label: 'متوسط',
-    min: 900,
-    max: 1299
-  },
-  {
-    key: 'advanced',
-    label: 'متقدم',
-    min: 1300,
-    max: 1699
-  },
-  {
-    key: 'expert',
-    label: 'خبير',
-    min: 1700,
-    max: 2099
+    min: 41,
+    max: 70
   },
   {
     key: 'grandmaster',
     label: 'جراند ماستر',
-    min: 2100,
-    max: 3000
+    min: 71,
+    max: Infinity
   }
 ]
 
@@ -760,13 +1481,8 @@ function getPlayerRatingState(
         : 100
   }
 
-  else if (RATING_MAX > tier.min) {
-    percent = Math.round(
-      (
-        (rating - tier.min) /
-        (RATING_MAX - tier.min)
-      ) * 100
-    )
+  else {
+    percent = 100
   }
 
   return {
@@ -807,13 +1523,11 @@ function getOnlinePerformanceSnapshot() {
   const elapsedMs = matchTimerStartedAt
     ? matchTimerElapsedMs + (performance.now() - matchTimerStartedAt)
     : matchTimerElapsedMs
-  const fastWin = elapsedMs < 180000
-
   return {
     moves: currentGameMoves,
     pieceAdvantage: capturedDifference,
     margin,
-    fastWin
+    elapsedMs
   }
 }
 
@@ -834,22 +1548,28 @@ function calculateRatingResult(
   const actual = playerWon ? 1 : 0
   const pieceAdvantage = Number(performance.pieceAdvantage || 0)
   const margin = Number(performance.margin || 0)
-  const fastWin = Boolean(performance.fastWin)
-  const moveCount = Number(performance.moves || 0)
+  const elapsedMs = Number(performance.elapsedMs || 0)
+
+  if (elapsedMs < 30000) {
+    return {
+      before: playerRating,
+      after: playerRating,
+      change: 0,
+      opponent: safeOpponentRating
+    }
+  }
 
   let bonus = 0
   let penalty = 0
 
   if (playerWon) {
-    if (fastWin) bonus += 12
-    if (pieceAdvantage >= 3) bonus += 10
-    if (moveCount > 0 && moveCount < 25) bonus += 6
-    if (margin >= 2) bonus += Math.min(10, margin * 2)
+    if (elapsedMs < 120000) bonus += 7
+    else if (elapsedMs < 300000) bonus += 3
+    bonus += Math.min(8, pieceAdvantage * 2)
   }
 
   else {
-    penalty += Math.min(18, Math.max(6, margin * 2))
-    if (moveCount > 0 && moveCount <= 20) penalty -= 4
+    penalty += Math.min(8, Math.max(2, margin))
   }
 
   const adjusted =
@@ -983,13 +1703,17 @@ function loadProfile() {
       )
 
     if (!saved) {
+      localStorage.setItem(LOCAL_RATING_RESET_KEY, 'done')
       return defaultProfile
     }
 
     const data =
       JSON.parse(saved)
 
-    return {
+    const resetLocalRating =
+      localStorage.getItem(LOCAL_RATING_RESET_KEY) !== 'done'
+
+    const profile = {
       ...defaultProfile,
       ...data,
 
@@ -1025,8 +1749,9 @@ function loadProfile() {
         },
 
         progress: {
-          rating:
-            normalizeRating(
+          rating: resetLocalRating
+            ? RATING_START
+            : normalizeRating(
               data
                 .levels
                 ?.progress
@@ -1040,6 +1765,13 @@ function loadProfile() {
           ? data.history
           : []
     }
+
+      if (resetLocalRating) {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+        localStorage.setItem(LOCAL_RATING_RESET_KEY, 'done')
+      }
+
+      return profile
   }
 
   catch (error) {
@@ -1735,6 +2467,16 @@ function showHome() {
         </span>
       </button>
 
+      <button
+        id="friendsBtn"
+        class="friends-top-btn"
+        type="button"
+      >
+        <span aria-hidden="true">♙</span>
+        <span>الأصدقاء</span>
+        <span id="friendsOnlineCount" class="friends-online-count">0</span>
+      </button>
+
 
       <!-- ========================================
            الصفحة الرئيسية العادية
@@ -1751,6 +2493,10 @@ function showHome() {
         <div class="menu">
           <button id="newGameBtn" class="primary-btn home-action-btn">
             لعبة جديدة
+          </button>
+
+          <button id="trainingHomeBtn" class="secondary-btn home-action-btn training-action-btn" type="button">
+            تدريب احترافي
           </button>
 
           <button
@@ -2292,6 +3038,76 @@ function showHome() {
 
       </section>
 
+      <section id="friendsView" class="profile-view friends-view" hidden>
+        <div class="friends-page-header">
+          <button id="friendsBackBtn" class="profile-back-btn" type="button">
+            ← رجوع
+          </button>
+          <h2>الأصدقاء</h2>
+          <div class="my-friend-code">
+            <small>معرّفك</small>
+            <strong id="myFriendCode">-----</strong>
+          </div>
+        </div>
+
+        <p id="friendsAuthNotice" class="friends-auth-notice" hidden>
+          سجّل الدخول لإنشاء معرّف وإدارة قائمة أصدقائك.
+        </p>
+
+        <div id="friendsContent">
+          <div id="friendsHomePanel">
+          <form id="addFriendForm" class="add-friend-form">
+            <label for="friendCodeInput">إضافة صديق</label>
+            <div class="add-friend-controls">
+              <input
+                id="friendCodeInput"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]{5}"
+                maxlength="5"
+                placeholder="معرّف من 5 أرقام"
+                autocomplete="off"
+              >
+              <button type="submit" class="primary-btn">إرسال الطلب</button>
+            </div>
+            <p id="friendActionMessage" class="friend-action-message" aria-live="polite"></p>
+          </form>
+
+          <div class="friends-inbox-actions">
+            <button id="openFriendRequestsBtn" class="friends-inbox-button" type="button">
+              <span>طلبات الصداقة</span>
+              <span id="friendRequestsCount" class="friends-inbox-count">0</span>
+            </button>
+            <button id="openGameInvitesBtn" class="friends-inbox-button" type="button">
+              <span>طلبات اللعب</span>
+              <span id="gameInvitesCount" class="friends-inbox-count">0</span>
+            </button>
+          </div>
+
+          <section class="friends-section">
+            <h3>قائمة الأصدقاء</h3>
+            <div id="friendsList" class="friend-list"></div>
+          </section>
+          </div>
+
+          <section id="friendRequestsPanel" class="friends-section friends-inbox-panel" hidden>
+            <div class="friends-inbox-header">
+              <button id="backFromFriendRequestsBtn" class="profile-back-btn" type="button">← رجوع</button>
+              <h3>طلبات الصداقة</h3>
+            </div>
+            <div id="friendRequestsList" class="friend-list"></div>
+          </section>
+
+          <section id="gameInvitesPanel" class="friends-section friends-inbox-panel" hidden>
+            <div class="friends-inbox-header">
+              <button id="backFromGameInvitesBtn" class="profile-back-btn" type="button">← رجوع</button>
+              <h3>طلبات اللعب</h3>
+            </div>
+            <div id="gameInvitesList" class="friend-list"></div>
+          </section>
+        </div>
+      </section>
+
       <!-- ========================================
            لوحة الصدارة
            ======================================== -->
@@ -2432,12 +3248,26 @@ function showHome() {
 
   setupHomeEvents()
 updateProfileUI()
-supabase.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    currentAuthUser = session.user
-    await loadCloudProfile(session.user)
-    updateProfileUI()
-  }
+supabase.auth.onAuthStateChange((event, session) => {
+  window.setTimeout(async () => {
+    if (session?.user) {
+      currentAuthUser = session.user
+      await loadCloudProfile(session.user)
+      startPresenceTracking()
+      updateProfileUI()
+      await refreshAuthUI()
+      return
+    }
+
+    if (event === 'SIGNED_OUT') {
+      await stopPresenceTracking()
+      currentAuthUser = null
+      activePresenceRoom = null
+      activePresenceWatchKey = null
+      updateProfileUI()
+      await refreshAuthUI()
+    }
+  }, 0)
 })
 
 refreshAuthUI()
@@ -2600,7 +3430,7 @@ function updateProfileUI() {
     xpTotal.textContent =
       ratingState.nextTier
         ? `التالي: ${ratingState.nextTier.label} عند ${ratingState.nextRating}`
-        : 'أعلى تصنيف • 3000'
+        : 'جراند ماستر • بلا حد أعلى'
   }
 
   if (xpFill) {
@@ -3138,7 +3968,7 @@ function openPublicPlayerProfile(
             ${
               ratingState.nextTier
                 ? `التالي: ${escapeHtml(ratingState.nextTier.label)} عند ${ratingState.nextRating}`
-                : 'أعلى تصنيف • 3000'
+                : 'جراند ماستر • بلا حد أعلى'
             }
           </span>
         </div>
@@ -3235,12 +4065,26 @@ async function refreshAuthUI() {
 
   const user = session?.user || null
 
+  if (!user && currentAuthUser?.id) {
+    return
+  }
+
+  if (currentAuthUser?.id && currentAuthUser.id !== user?.id) {
+    await stopPresenceTracking()
+    activePresenceRoom = null
+    activePresenceWatchKey = null
+  }
+
   currentAuthUser = user || null
 
   // نحافظ على الحساب بعد إغلاق الموقع أو الرجوع له
   // ولا نمسح الجلسة بسبب قراءة مؤقتة فارغة من المتصفح
   if (user) {
     await loadCloudProfile(user)
+    startPresenceTracking()
+  }
+  else {
+    await stopPresenceTracking()
   }
 
   const guestView =
@@ -3312,6 +4156,9 @@ function setupHomeEvents() {
       '#profileView'
     )
 
+  const friendsView =
+    document.querySelector('#friendsView')
+
   const leaderboardView =
     document.querySelector(
       '#leaderboardView'
@@ -3340,10 +4187,51 @@ function setupHomeEvents() {
 
         mainContent.hidden = true
         profileView.hidden = false
+        friendsView.hidden = true
+        leaderboardView.hidden = true
+        stopFriendsRefresh()
 
         updateProfileUI()
       }
     )
+
+  document
+    .querySelector('#friendsBtn')
+    .addEventListener('click', () => {
+      mainContent.hidden = true
+      profileView.hidden = true
+      leaderboardView.hidden = true
+      friendsView.hidden = false
+      openFriendsView()
+    })
+
+  document
+    .querySelector('#friendsBackBtn')
+    .addEventListener('click', () => {
+      friendsView.hidden = true
+      mainContent.hidden = false
+      stopFriendsRefresh()
+    })
+
+  document
+    .querySelector('#addFriendForm')
+    .addEventListener('submit', sendFriendRequestFromForm)
+
+  document
+    .querySelector('#openFriendRequestsBtn')
+    .addEventListener('click', () => showFriendsInbox('friend-requests'))
+
+  document
+    .querySelector('#openGameInvitesBtn')
+    .addEventListener('click', () => showFriendsInbox('game-invites'))
+
+  document
+    .querySelector('#backFromFriendRequestsBtn')
+    .addEventListener('click', () => showFriendsInbox('home'))
+
+  document
+    .querySelector('#backFromGameInvitesBtn')
+    .addEventListener('click', () => showFriendsInbox('home'))
 
 
   // ========================================
@@ -3373,6 +4261,8 @@ function setupHomeEvents() {
       () => {
         mainContent.hidden = true
         profileView.hidden = true
+        friendsView.hidden = true
+        stopFriendsRefresh()
         leaderboardView.hidden = false
 
         if (publicPlayerView) {
@@ -3472,6 +4362,10 @@ function setupHomeEvents() {
         )
       }
     )
+
+  document
+    .querySelector('#trainingHomeBtn')
+    .addEventListener('click', () => startGame('training'))
 
 
   document
@@ -3708,6 +4602,7 @@ document
     'click',
     async () => {
 
+      await stopPresenceTracking()
       await supabase.auth.signOut()
 
       currentAuthUser = null
@@ -3933,13 +4828,18 @@ function createOnlineRoom() {
     socket.connect()
   }
 
-  socket.emit(
+  socket.timeout(10000).emit(
     'create-room',
     {
       ...onlineRoomSettings,
       playerName: playerProfile.name
     },
-    response => {
+    (socketError, response) => {
+      if (socketError) {
+        error.textContent = 'لم يستجب سيرفر اللعب. تحقق من عنوان VITE_SOCKET_URL وتشغيل الخادم.'
+        return
+      }
+
       if (!response?.success) {
         alert(
           response?.message ||
@@ -3949,6 +4849,8 @@ function createOnlineRoom() {
       }
 
       onlineRoomCode = response.code
+      currentRoomWatchKey = response.watchKey
+      setActivePresenceRoom(null, null)
       onlinePlayerColor = response.color
       onlineMode = true
       onlineOpponentConnected = false
@@ -4134,6 +5036,8 @@ function joinOnlineRoom() {
       }
 
       onlineRoomCode = response.code
+      currentRoomWatchKey = response.watchKey
+      setActivePresenceRoom(onlineRoomCode, currentRoomWatchKey)
       onlinePlayerColor = response.color
       onlineMode = true
       onlineOpponentConnected = true
@@ -4239,6 +5143,14 @@ function startOnlineGame() {
         </div>
       </div>
 
+      ${localColor === 'cream' && !onlineOpponentConnected ? `
+        <div class="room-invite-dock">
+          <button id="inviteFriendBtn" class="room-invite-trigger" type="button">
+            دعوة صديق للعب
+          </button>
+        </div>
+      ` : ''}
+
       <div
         id="computerPlayer"
         class="player online-player-card online-opponent-player"
@@ -4278,6 +5190,10 @@ function startOnlineGame() {
   if (opponentNameLabel) {
     opponentNameLabel.textContent = onlineOpponentName
   }
+
+  document
+    .querySelector('#inviteFriendBtn')
+    ?.addEventListener('click', openRoomInviteView)
 
   createBoard()
 
@@ -4397,6 +5313,14 @@ function getOppositeColor(color) {
 // ========================================
 
 function leaveOnlineRoom() {
+  if (spectatingMode) {
+    socket.emit('stop-spectating')
+    spectatingMode = false
+  }
+
+  setActivePresenceRoom(null, null)
+  currentRoomWatchKey = null
+
   if (
     onlineMode &&
     onlineRoomCode
@@ -4811,6 +5735,10 @@ function getLevelName(level) {
     return 'أونلاين'
   }
 
+  if (level === 'training') {
+    return 'تدريب احترافي'
+  }
+
   return ''
 }
 
@@ -4857,7 +5785,8 @@ async function exitCurrentGameAsLoss() {
   const shouldRecordLoss =
     !gameOver &&
     !currentGameRecorded &&
-    currentLevel
+    currentLevel &&
+    currentLevel !== 'training'
 
   if (shouldRecordLoss) {
 
@@ -4898,6 +5827,9 @@ function startGame(level) {
   gameOver = false
 currentGameMoves = 0
 currentGameRecorded = false
+  trainingUndoSnapshots = []
+  trainingTurnStartSnapshot = null
+  trainingLastMoveExplanation = ''
 
   document.querySelector('#app').innerHTML = `
     <main class="game-page">
@@ -4911,7 +5843,7 @@ currentGameRecorded = false
         <div class="game-info">
           <h2>الدامة</h2>
           <p>
-            ضد الكمبيوتر • ${getLevelName(level)}
+            ${level === 'training' ? 'تدريب تفاعلي' : 'ضد الكمبيوتر'} • ${getLevelName(level)}
           </p>
         </div>
 
@@ -4940,7 +5872,39 @@ currentGameRecorded = false
         </div>
       </div>
 
-      <div id="board" class="board"></div>
+      ${level === 'training' ? `
+        <div class="training-board-frame" aria-label="إحداثيات رقعة التدريب">
+          <div class="training-file-labels" aria-hidden="true">
+            ${[1,2,3,4,5,6,7,8].map(number => `<span>${number}</span>`).join('')}
+          </div>
+          <div class="training-board-row">
+            <div class="training-rank-labels" aria-hidden="true">
+              ${[1,2,3,4,5,6,7,8].map(number => `<span>${number}</span>`).join('')}
+            </div>
+            <div id="board" class="board"></div>
+            <div class="training-rank-labels" aria-hidden="true">
+              ${[1,2,3,4,5,6,7,8].map(number => `<span>${number}</span>`).join('')}
+            </div>
+          </div>
+          <div class="training-file-labels" aria-hidden="true">
+            ${[1,2,3,4,5,6,7,8].map(number => `<span>${number}</span>`).join('')}
+          </div>
+        </div>
+      ` : '<div id="board" class="board"></div>'}
+
+      ${level === 'training' ? `
+        <section id="trainingCoach" class="training-coach" aria-live="polite">
+          <div class="training-coach-copy">
+            <small>المدرب</small>
+            <p id="trainingAdvice">أحلل وضع الرقعة...</p>
+            <p id="trainingPreviousMove" class="training-previous-move" hidden></p>
+          </div>
+          <div class="training-coach-actions">
+            <button id="trainingExplainPrevBtn" class="training-explain-btn" type="button" disabled>شرح النقلة السابقة</button>
+            <button id="trainingUndoBtn" class="training-undo-btn" type="button" title="الرجوع لما قبل نقلة دورك" aria-label="الرجوع لما قبل نقلة دورك" disabled>↶ رجوع خطوة</button>
+          </div>
+        </section>
+      ` : ''}
 
       <div class="players">
 
@@ -4977,6 +5941,16 @@ currentGameRecorded = false
 
   createBoard()
   startMatchTimer()
+
+  if (level === 'training') {
+    trainingTurnStartSnapshot = captureTrainingSnapshot()
+    renderTrainingAdvice()
+    updateTrainingUndoButton()
+    document.querySelector('#trainingUndoBtn')
+      ?.addEventListener('click', undoTrainingTurn)
+    document.querySelector('#trainingExplainPrevBtn')
+      ?.addEventListener('click', showTrainingPreviousMove)
+  }
 
   document
     .querySelector('#exitGameBtn')
@@ -5612,6 +6586,10 @@ function moveSelectedPiece(square) {
   ) {
     return
   }
+  const trainingFromRow = Number(selectedPiece.parentElement.dataset.row)
+  const trainingFromCol = Number(selectedPiece.parentElement.dataset.col)
+  const trainingToRow = Number(square.dataset.row)
+  const trainingToCol = Number(square.dataset.col)
 // تسجيل حركة اللاعب
   currentGameMoves++
   const captured =
@@ -5656,6 +6634,20 @@ playMoveSound()
   const justBecameKing =
     !wasKing && isKingNow
 
+  if (currentLevel === 'training') {
+    const reason = captured
+      ? 'تأكل قطعة من الخصم وتكسب أفضلية مادية.'
+      : justBecameKing
+        ? 'ترقّي حجرك إلى ملك، فيحصل على حركة أوسع.'
+        : trainingToRow >= 2 && trainingToRow <= 5 && trainingToCol >= 2 && trainingToCol <= 5
+          ? 'تقترب من الوسط وتفتح للحجر مسارات أكثر.'
+          : 'تحافظ على تشكيلتك وتجهز خياراتك للنقلة التالية.'
+    const explanation =
+      `نقلتك من ${trainingFromRow + 1},${trainingFromCol + 1} إلى ${trainingToRow + 1},${trainingToCol + 1}: ${reason}`
+    setTrainingPreviousMoveExplanation(explanation)
+    setTrainingAdvice(explanation)
+  }
+
   // ========================================
   // إذا صار ملك الآن
   // تنتهي حركته فورًا
@@ -5699,6 +6691,10 @@ playMoveSound()
         showPlayerMove
       )
 
+      if (currentLevel === 'training') {
+        setTrainingAdvice('الأكل إجباري؛ أكمل سلسلة الأكل قبل انتهاء دورك.')
+      }
+
       setTurnText(
         'أكمل الأكل'
       )
@@ -5717,6 +6713,222 @@ playMoveSound()
   }
 
   startComputerTurn()
+}
+
+function captureTrainingSnapshot() {
+  return {
+    turn: currentTurn,
+    moves: currentGameMoves,
+    previousExplanation: trainingLastMoveExplanation,
+    pieces: Array.from(
+      document.querySelectorAll('.checker-piece')
+    ).map(piece => ({
+      row: Number(piece.parentElement.dataset.row),
+      col: Number(piece.parentElement.dataset.col),
+      color: piece.dataset.color,
+      king: piece.dataset.king === 'true'
+    }))
+  }
+}
+
+function restoreTrainingSnapshot(snapshot) {
+  const board = document.querySelector('#board')
+  if (!board || !snapshot) return
+
+  board.replaceChildren()
+  createBoard()
+  board.querySelectorAll('.checker-piece').forEach(piece => piece.remove())
+
+  snapshot.pieces.forEach(state => {
+    const square = getSquare(state.row, state.col)
+    if (!square) return
+
+    const piece = createPiece(state.color)
+    if (state.king) {
+      piece.dataset.king = 'true'
+      piece.classList.add('king')
+      const symbol = document.createElement('span')
+      symbol.classList.add('king-symbol')
+      symbol.textContent = '♛'
+      piece.append(symbol)
+    }
+    square.append(piece)
+  })
+
+  currentTurn = snapshot.turn
+  currentGameMoves = snapshot.moves
+  trainingLastMoveExplanation = snapshot.previousExplanation || ''
+  const previousMove = document.querySelector('#trainingPreviousMove')
+  if (previousMove) {
+    previousMove.textContent = trainingLastMoveExplanation
+    previousMove.hidden = true
+  }
+  selectedPiece = null
+  mustContinueCapture = false
+  gameOver = false
+  clearSelection()
+  clearForcedCaptureHint()
+  document.querySelector('.game-result-overlay')?.remove()
+  updatePlayerHighlight()
+  updateTrainingUndoButton()
+  renderTrainingAdvice()
+}
+
+function updateTrainingUndoButton() {
+  const button = document.querySelector('#trainingUndoBtn')
+  if (button) {
+    button.disabled =
+      trainingUndoSnapshots.length === 0 ||
+      (!gameOver && currentTurn !== 'cream')
+  }
+
+  const explainButton = document.querySelector('#trainingExplainPrevBtn')
+  if (explainButton) {
+    explainButton.disabled = !trainingLastMoveExplanation
+  }
+}
+
+function setTrainingPreviousMoveExplanation(text) {
+  trainingLastMoveExplanation = text
+  const previousMove = document.querySelector('#trainingPreviousMove')
+  if (previousMove) {
+    previousMove.textContent = text
+    previousMove.hidden = true
+  }
+  updateTrainingUndoButton()
+}
+
+function showTrainingPreviousMove() {
+  const previousMove = document.querySelector('#trainingPreviousMove')
+  if (!previousMove || !trainingLastMoveExplanation) return
+  previousMove.textContent = trainingLastMoveExplanation
+  previousMove.hidden = !previousMove.hidden
+}
+
+function undoTrainingTurn() {
+  if (
+    currentLevel !== 'training' ||
+    (!gameOver && currentTurn !== 'cream') ||
+    trainingUndoSnapshots.length === 0
+  ) return
+
+  trainingTurnStartSnapshot =
+    trainingUndoSnapshots.pop()
+  restoreTrainingSnapshot(trainingTurnStartSnapshot)
+}
+
+function getBestTrainingMove(color) {
+  let moves = getAllMoves(color)
+  if (moves.length === 0) return null
+  if (color === 'cream' && mustContinueCapture && selectedPiece) {
+    moves = moves.filter(move => move.piece === selectedPiece)
+  }
+  if (moves.length === 1) return { move: moves[0], gap: 0 }
+
+  const board = createAIBoard()
+  let turns = getHardTurns(board, color)
+  if (color === 'cream' && mustContinueCapture && selectedPiece) {
+    const square = selectedPiece.parentElement
+    const row = Number(square.dataset.row)
+    const col = Number(square.dataset.col)
+    turns = turns.filter(turn =>
+      turn.steps[0]?.fromRow === row && turn.steps[0]?.fromCol === col
+    )
+  }
+  const deadline = performance.now() + 300
+  const table = new Map()
+  const maximizing = color === 'black'
+  let bestScore = maximizing ? -Infinity : Infinity
+  let secondScore = bestScore
+  let bestMove = null
+
+  for (const turn of turns) {
+    if (performance.now() >= deadline) break
+
+    const result = hardMinimax(
+      applyHardTurn(board, turn),
+      3,
+      getOppositeColor(color),
+      -Infinity,
+      Infinity,
+      deadline,
+      table
+    )
+    if (result.timeout) break
+
+    const firstStep = turn.steps[0]
+    const move = findDOMMoveForHardStep(moves, firstStep)
+    if (!move) continue
+
+    const improves = maximizing
+      ? result.score > bestScore
+      : result.score < bestScore
+
+    if (improves) {
+      secondScore = bestScore
+      bestScore = result.score
+      bestMove = move
+    }
+    else if (
+      maximizing ? result.score > secondScore : result.score < secondScore
+    ) {
+      secondScore = result.score
+    }
+  }
+
+  return {
+    move: bestMove || moves[0],
+    gap: Number.isFinite(secondScore)
+      ? Math.abs(bestScore - secondScore)
+      : 0
+  }
+}
+
+function explainTrainingMove(move, color, scoreGap = 0) {
+  const reasons = []
+  if (move.capture) reasons.push('تأكل قطعة من الخصم')
+
+  const reachesKing =
+    move.piece.dataset.king !== 'true' &&
+    ((color === 'cream' && move.row === 0) ||
+      (color === 'black' && move.row === 7))
+  if (reachesKing) reasons.push('ترقّي الحجر إلى ملك')
+
+  if (move.row >= 2 && move.row <= 5 && move.col >= 2 && move.col <= 5) {
+    reasons.push('تسيطر على وسط الرقعة وتفتح مسارات أكثر')
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(
+      scoreGap > 30
+        ? 'تتفوق على البديل التالي في تقييم الوضع والتهديدات'
+        : 'تحافظ على توازن القطع وتبقي خياراتك مفتوحة'
+    )
+  }
+
+  const from = move.piece.parentElement
+  const start = `${Number(from.dataset.row) + 1},${Number(from.dataset.col) + 1}`
+  const destination = `${move.row + 1},${move.col + 1}`
+  return `من ${start} إلى ${destination}: ${reasons.join('، ')}.`
+}
+
+function setTrainingAdvice(text) {
+  const advice = document.querySelector('#trainingAdvice')
+  if (advice) advice.textContent = text
+}
+
+function renderTrainingAdvice() {
+  if (currentLevel !== 'training' || currentTurn !== 'cream') return
+
+  const result = getBestTrainingMove('cream')
+  if (!result) {
+    setTrainingAdvice('لا توجد نقلة قانونية متاحة.')
+    return
+  }
+
+  setTrainingAdvice(
+    `أفضل نقلة لك: ${explainTrainingMove(result.move, 'cream', result.gap)}`
+  )
 }
 
 // ========================================
@@ -5759,6 +6971,17 @@ function computerMove() {
     finishGame(
       'فزت! الكمبيوتر لا يملك أي حركة 👑'
     )
+    return
+  }
+
+  if (currentLevel === 'training') {
+    const chosen = chooseHardMove(moves)
+    if (chosen) {
+      setTrainingAdvice(
+        `أفضل رد للكمبيوتر: ${explainTrainingMove(chosen, 'black')}`
+      )
+    }
+    executeComputerMove(chosen || moves[0])
     return
   }
 
@@ -6417,6 +7640,10 @@ function chooseComputerMove(moves) {
 
   if (currentLevel === "hard") {
     return chooseHardMove(moves);
+  }
+
+  if (currentLevel === 'training') {
+    return chooseHardMove(moves)
   }
 
   return moves[Math.floor(Math.random() * moves.length)];
@@ -9609,6 +10836,11 @@ function executeComputerMove(move) {
     return
   }
 
+  const trainingFromRow = Number(piece.parentElement.dataset.row)
+  const trainingFromCol = Number(piece.parentElement.dataset.col)
+  const trainingToRow = Number(move.row)
+  const trainingToCol = Number(move.col)
+
   showComputerSelectedPiece(piece)
 
   setTimeout(() => {
@@ -9674,6 +10906,20 @@ function executeComputerMove(move) {
 
     const justBecameKing =
       !wasKing && isKingNow
+
+    if (currentLevel === 'training') {
+      const reason = move.capture
+        ? 'تأكل قطعة من الخصم وتكسب أفضلية مادية.'
+        : justBecameKing
+          ? 'ترقّي حجرك إلى ملك، فيحصل على حركة أوسع.'
+          : trainingToRow >= 2 && trainingToRow <= 5 && trainingToCol >= 2 && trainingToCol <= 5
+            ? 'تقترب من الوسط وتفتح للحجر مسارات أكثر.'
+            : 'تحافظ على تشكيلتك وتجهز خياراتك للنقلة التالية.'
+      const explanation =
+        `رد الكمبيوتر من ${trainingFromRow + 1},${trainingFromCol + 1} إلى ${trainingToRow + 1},${trainingToCol + 1}: ${reason}`
+      setTrainingPreviousMoveExplanation(explanation)
+      setTrainingAdvice(explanation)
+    }
 
     // ========================================
     // فحص نهاية اللعبة
@@ -9770,6 +11016,15 @@ function endComputerTurn() {
   }
 
   setTurnText('دورك')
+
+  if (currentLevel === 'training') {
+    if (trainingTurnStartSnapshot) {
+      trainingUndoSnapshots.push(trainingTurnStartSnapshot)
+    }
+    trainingTurnStartSnapshot = captureTrainingSnapshot()
+    updateTrainingUndoButton()
+    renderTrainingAdvice()
+  }
 }
 
 // ========================================
@@ -10096,11 +11351,24 @@ function finishGame(message) {
 
   gameOver = true
 
+  if (
+    currentLevel === 'training' &&
+    trainingTurnStartSnapshot
+  ) {
+    trainingUndoSnapshots.push(trainingTurnStartSnapshot)
+    updateTrainingUndoButton()
+  }
+
   stopImpossibleWorker()
   stopKhaledWorker()
   stopMatchTimer(true)
   clearSelection()
   setTurnText(message)
+
+  if (onlineMode && !spectatingMode) {
+    socket.emit('game-finished')
+    setActivePresenceRoom(null, null)
+  }
 
   const playerWon =
     message.includes('فزت') ||
@@ -10108,7 +11376,9 @@ function finishGame(message) {
 
   playResultSound(playerWon)
 
-  recordGameResult(playerWon)
+  if (currentLevel !== 'training') {
+    recordGameResult(playerWon)
+  }
 
   const winChance =
     calculatePlayerWinChance()
