@@ -4,8 +4,8 @@ import { supabase } from './supabase.js'
 
 const AUDIO_SOURCES = {
   move: '/move.wav',
-  win: '/win.wav',
-  lose: '/lose.wav',
+  win: '/win.mp3',
+  lose: '/lose.mp3',
   king: '/king.wav'
 }
 
@@ -39,13 +39,13 @@ const moveSoundPool =
 const winSound =
   createGameAudio(
     AUDIO_SOURCES.win,
-    0.7
+    0.4
   )
 
 const loseSound =
   createGameAudio(
     AUDIO_SOURCES.lose,
-    0.7
+    0.4
   )
 
 const kingSound =
@@ -1037,7 +1037,7 @@ function applySpectatorMove(move, playSound = true) {
     )?.remove()
   }
 
-  target.appendChild(piece)
+  animatePieceMove(piece, target)
   if (playSound) playMoveSound()
   promoteIfNeeded(piece)
   currentTurn = move.nextTurn || getOppositeColor(move.color)
@@ -2278,7 +2278,7 @@ function ensureProgressionStyles() {
     }
 
     .rank-beginner::after {
-      content: '•';
+      content: '♟';
       color: #f4dfc5;
     }
 
@@ -2288,7 +2288,7 @@ function ensureProgressionStyles() {
     }
 
     .rank-rising::after {
-      content: '◆';
+      content: '♞';
       color: #ffe2b8;
     }
 
@@ -2298,7 +2298,7 @@ function ensureProgressionStyles() {
     }
 
     .rank-intermediate::after {
-      content: '✦';
+      content: '♝';
       color: #2b2925;
     }
 
@@ -2312,7 +2312,7 @@ function ensureProgressionStyles() {
     }
 
     .rank-advanced::after {
-      content: '✦';
+      content: '♜';
       color: #573812;
     }
 
@@ -2343,7 +2343,7 @@ function ensureProgressionStyles() {
     }
 
     .rank-grandmaster::after {
-      content: '♛';
+      content: '♚';
       color: #3b210c;
       text-shadow: 0 1px 0 rgba(255,255,255,.35);
     }
@@ -4556,6 +4556,11 @@ function setupHomeEvents() {
       '#homeMainContent'
     )
 
+  const homeAccountActions =
+    document.querySelector(
+      '.home-account-actions'
+    )
+
   const profileView =
     document.querySelector(
       '#profileView'
@@ -4594,6 +4599,7 @@ function setupHomeEvents() {
         profileView.hidden = false
         friendsView.hidden = true
         leaderboardView.hidden = true
+        homeAccountActions.hidden = true
         stopFriendsRefresh()
 
         updateProfileUI()
@@ -4607,6 +4613,7 @@ function setupHomeEvents() {
       profileView.hidden = true
       leaderboardView.hidden = true
       friendsView.hidden = false
+      homeAccountActions.hidden = true
       openFriendsView()
     })
 
@@ -4615,6 +4622,7 @@ function setupHomeEvents() {
     .addEventListener('click', () => {
       friendsView.hidden = true
       mainContent.hidden = false
+      homeAccountActions.hidden = false
       stopFriendsRefresh()
     })
 
@@ -4660,6 +4668,7 @@ function setupHomeEvents() {
 
         profileView.hidden = true
         mainContent.hidden = false
+        homeAccountActions.hidden = false
       }
     )
 
@@ -4686,6 +4695,7 @@ function setupHomeEvents() {
         mainContent.hidden = true
         profileView.hidden = true
         friendsView.hidden = true
+        homeAccountActions.hidden = true
         stopFriendsRefresh()
         leaderboardView.hidden = false
 
@@ -4719,6 +4729,7 @@ function setupHomeEvents() {
         }
 
         mainContent.hidden = false
+        homeAccountActions.hidden = false
       }
     )
 
@@ -5177,21 +5188,25 @@ function showRoomCustomization() {
 
       <button id="roomSettingsBack" class="back-btn modern-back-btn">→</button>
 
-      <div class="online-modal-badge">⚙️ تخصيص الروم</div>
-
       <h2>إعدادات المباراة</h2>
       <p class="modal-description">
         اختر طريقة اللعب قبل بدء الروم
       </p>
 
       <button type="button" class="room-setting-option selected" data-mode="no-time">
-        <strong>♟️ اللعب بدون وقت</strong>
-        <small>مباراة مفتوحة بدون مؤقت</small>
+        <span class="room-setting-icon">♟️</span>
+        <div class="room-setting-copy">
+          <strong>اللعب بدون وقت</strong>
+          <small>مباراة مفتوحة بدون مؤقت</small>
+        </div>
       </button>
 
       <button type="button" class="room-setting-option" data-mode="time">
-        <strong>⏱️ اللعب مع وقت</strong>
-        <small>كل لاعب لديه وقته الخاص مثل الشطرنج</small>
+        <span class="room-setting-icon">⏱️</span>
+        <div class="room-setting-copy">
+          <strong>اللعب مع وقت</strong>
+          <small>هل أنت مستعد للتوتر؟</small>
+        </div>
       </button>
 
       <div id="timeChoices" class="time-choices" hidden>
@@ -5861,6 +5876,9 @@ function moveSelectedPieceOnline(square) {
       'possible-move'
     )
   ) {
+    if (!square.querySelector('.checker-piece')) {
+      clearSelection()
+    }
     return
   }
 
@@ -5906,7 +5924,7 @@ function moveSelectedPieceOnline(square) {
     }
   }
 
-  square.appendChild(piece)
+  animatePieceMove(piece, square)
   playMoveSound()
   promoteIfNeeded(piece)
 
@@ -6058,7 +6076,7 @@ function applyRemoteOnlineMove(move) {
     }
   }
 
-  target.appendChild(piece)
+  animatePieceMove(piece, target)
   playMoveSound()
   promoteIfNeeded(piece)
   recordGameReviewMove(move)
@@ -6521,6 +6539,43 @@ function getPieceAt(row, col) {
 
   return square.querySelector(
     '.checker-piece'
+  )
+}
+
+// ========================================
+// تحريك الحجر بسلاسة (نفس نظام التحريك،
+// فقط نضيف انزلاق مرئي بين الخانتين)
+// ========================================
+
+function animatePieceMove(piece, target) {
+  const from = piece.getBoundingClientRect()
+
+  target.appendChild(piece)
+
+  const to = piece.getBoundingClientRect()
+
+  const dx = from.left - to.left
+  const dy = from.top - to.top
+
+  if (!dx && !dy) return
+
+  piece.style.transition = 'none'
+  piece.style.transform = `translate(${dx}px, ${dy}px)`
+
+  // فرض إعادة الرسم قبل بدء الانزلاق
+  piece.getBoundingClientRect()
+
+  requestAnimationFrame(() => {
+    piece.style.transition = 'transform 0.32s cubic-bezier(.22,.61,.36,1)'
+    piece.style.transform = ''
+  })
+
+  piece.addEventListener(
+    'transitionend',
+    () => {
+      piece.style.transition = ''
+    },
+    { once: true }
   )
 }
 
@@ -7035,6 +7090,9 @@ function moveSelectedPiece(square) {
       'possible-move'
     )
   ) {
+    if (!square.querySelector('.checker-piece')) {
+      clearSelection()
+    }
     return
   }
   const trainingFromRow = Number(selectedPiece.parentElement.dataset.row)
@@ -7068,8 +7126,8 @@ function moveSelectedPiece(square) {
   }
 
   // تحريك الحجر
-  square.appendChild(
-  selectedPiece
+  animatePieceMove(
+  selectedPiece, square
 )
 
 playMoveSound()
@@ -8027,7 +8085,7 @@ function executeImpossibleTurn(
   }
 
   // تحريك الحجر
-  target.appendChild(piece)
+  animatePieceMove(piece, target)
   playMoveSound()
 
   // ترقية إذا وصل للنهاية
@@ -11362,7 +11420,7 @@ function executeComputerMove(move) {
     // تحريك الحجر الأسود
     // ========================================
 
-    target.appendChild(piece)
+    animatePieceMove(piece, target)
     playMoveSound()
     clearComputerSelectedPiece()
 
@@ -11884,8 +11942,8 @@ function finishGame(message) {
     : 'result-title lose'
 
   title.textContent = playerWon
-    ? '👑 مبروك الانتصار!'
-    : '💔 لم يحالفك الحظ هذه المرة'
+    ? 'مبروك الانتصار!'
+    : 'لم يحالفك الحظ هذه المرة'
 
   const resultMessage =
     document.createElement('p')

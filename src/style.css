@@ -584,21 +584,29 @@ button {
 }
 
 .exit-game-btn {
-  background: #171717;
+  background: rgba(255, 255, 255, 0.04);
 
-  color: #aaa59a;
+  color: #cfc8ba;
 
   border:
-    1px solid #33312c;
+    1px solid rgba(255, 255, 255, 0.09);
+
+  border-radius: 12px;
 
   padding:
     10px 20px;
 
   font-size: 14px;
+
+  font-weight: 700;
+
+  backdrop-filter: blur(6px);
 }
 
 .exit-game-btn:hover {
-  background: #24231f;
+  background: rgba(243, 233, 210, 0.10);
+
+  border-color: rgba(243, 233, 210, 0.28);
 
   color: #f3e9d2;
 }
@@ -710,8 +718,8 @@ button {
       rgba(0, 0, 0, 0.18);
 
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+    transform 0.18s ease-out,
+    box-shadow 0.18s ease-out;
 }
 
 .checker-piece::after {
@@ -732,23 +740,33 @@ button {
 
   border:
     2px solid
-    rgba(128, 128, 128, 0.25);
+    rgba(128, 128, 128, 0.4);
 }
 
 .cream-checker {
-  background: #f3e9d2;
+  background:
+    radial-gradient(circle at 35% 30%, #f1e6cc, #e2d0a3 60%, #cdb885);
 
   border:
-    3px solid #cfc2a4;
+    3px solid #a9843f;
+
+  box-shadow:
+    0 0 0 2px rgba(43, 24, 8, 0.35),
+    0 5px 8px rgba(0, 0, 0, 0.45);
 
   cursor: pointer;
 }
 
 .black-checker {
-  background: #151515;
+  background:
+    radial-gradient(circle at 35% 30%, #3a3a3a, #161616 65%, #050505);
 
   border:
-    3px solid #292929;
+    3px solid #5c5c5c;
+
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 5px 8px rgba(0, 0, 0, 0.55);
 }
 
 .cream-checker:hover {
@@ -855,7 +873,7 @@ button {
   padding:
     10px 14px;
 
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 .active-player {
@@ -2266,11 +2284,19 @@ transform: none;
 }
 
 #profileButtonName {
-  max-width: 130px;
+  flex: 1 1 auto;
+  min-width: 0;
+
+  max-width: none;
 
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  text-align: center;
+
+  font-size: 15px;
+  font-weight: 800;
 }
 
 @media (max-width: 700px) {
@@ -3763,52 +3789,40 @@ transform: none;
    🪵 مربعات خشب بعروق واضحة
    ======================================== */
 
-/* البلوط */
+/* البلوط - خشب فاتح واضح */
 .light-square {
   background:
     repeating-linear-gradient(
-      7deg,
-      rgba(105, 72, 38, 0.08) 0px,
-      rgba(105, 72, 38, 0.08) 1px,
+      8deg,
+      rgba(120, 82, 40, 0.06) 0px,
+      rgba(120, 82, 40, 0.06) 1px,
       transparent 1px,
-      transparent 7px
-    ),
-    repeating-linear-gradient(
-      94deg,
-      rgba(255, 255, 255, 0.06) 0px,
-      transparent 2px,
-      transparent 13px
+      transparent 10px
     ),
     linear-gradient(
       135deg,
-      #d8bc8b,
-      #c5a270 55%,
-      #b68e5a
+      #e6bd80,
+      #d3a161 55%,
+      #bd8a4a
     ) !important;
 }
 
 
-/* الجوز */
+/* الجوز - خشب غامق واضح */
 .dark-square {
   background:
     repeating-linear-gradient(
       8deg,
-      rgba(20, 10, 5, 0.20) 0px,
-      rgba(20, 10, 5, 0.20) 1px,
+      rgba(0, 0, 0, 0.16) 0px,
+      rgba(0, 0, 0, 0.16) 1px,
       transparent 1px,
-      transparent 8px
-    ),
-    repeating-linear-gradient(
-      96deg,
-      rgba(255, 255, 255, 0.035) 0px,
-      transparent 2px,
-      transparent 14px
+      transparent 10px
     ),
     linear-gradient(
       135deg,
-      #684328,
-      #4d301d 55%,
-      #382116
+      #6b4527,
+      #4a2e1a 55%,
+      #331e11
     ) !important;
 }
 
@@ -4340,7 +4354,7 @@ transform: none;
     filter: none !important;
 
     transition:
-      transform 0.045s ease !important;
+      transform 0.1s ease-out !important;
 
     will-change: auto;
 
@@ -4629,6 +4643,22 @@ transform: none;
     0 0 0 1px rgba(224,188,141,.14);
 }
 
+.turn-piece {
+  display: none;
+}
+
+.turn-box {
+  justify-content: center;
+}
+
+.turn-box #turnText {
+  flex: 1;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
 .players {
   gap: 12px;
 }
@@ -4636,6 +4666,8 @@ transform: none;
 .player {
   border: 1px solid rgba(255,255,255,.045);
   background: rgba(255,255,255,.018);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.14);
   transition:
     background .15s ease,
     border-color .15s ease,
@@ -4977,26 +5009,48 @@ transform: none;
 
 .room-setting-option{
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
   width: 100%;
   min-height: 82px;
   background: linear-gradient(145deg, #22211e, #171717);
   border: 1px solid rgba(243,233,210,.12);
-  border-radius: 14px;
-  padding: 16px 18px;
+  border-radius: 18px;
+  padding: 14px 18px;
   margin: 10px 0;
   cursor:pointer;
   text-align:right;
   color: #f3e9d2;
   font: inherit;
-  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+  box-shadow: 0 8px 20px rgba(0,0,0,.22);
+  transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.room-setting-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 13px;
+  background: rgba(255,255,255,.06);
+  font-size: 20px;
+}
+
+.room-setting-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
 .room-setting-option:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: rgba(243,233,210,.3);
+  box-shadow: 0 12px 26px rgba(0,0,0,.28);
 }
 
 .room-setting-option strong{
@@ -5013,7 +5067,9 @@ transform: none;
 .room-setting-option.selected{
   border-color: rgba(243,233,210,.62);
   background: linear-gradient(145deg, rgba(100,75,47,.48), #211f1b);
-  box-shadow: inset 0 0 0 1px rgba(243,233,210,.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(243,233,210,.08),
+    0 10px 24px rgba(0,0,0,.26);
 }
 
 .time-choices{
@@ -5033,10 +5089,15 @@ transform: none;
   color: #e9e2d5;
   border: 1px solid rgba(243,233,210,.16);
   padding: 10px 8px;
-  border-radius: 10px;
+  border-radius: 13px;
   font-size: 14px;
   font-weight: 700;
-  transition: background .18s ease, color .18s ease, border-color .18s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,.18);
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.time-choices button:hover {
+  transform: translateY(-1px);
 }
 
 .time-choices button.active{
@@ -5049,7 +5110,7 @@ transform: none;
   width: 100%;
   min-height: 48px;
   margin-top: 18px;
-  border-radius: 12px;
+  border-radius: 16px;
 }
 
 
@@ -5226,12 +5287,17 @@ button {
 }
 
 .player-clock {
-  min-width: 68px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  min-width: 74px;
+  padding: 5px 12px;
+  border: 1px solid rgba(243,233,210,.22);
+  border-radius: 10px;
+  background: rgba(255,255,255,.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 4px 12px rgba(0,0,0,.18);
   color: #f3e9d2;
-  font-size: 18px !important;
+  font-size: 19px !important;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -5258,7 +5324,8 @@ button {
   }
 
   .player-clock {
-    min-width: 56px;
+    min-width: 60px;
+    padding: 4px 9px;
     font-size: 16px !important;
   }
 }
@@ -5283,8 +5350,8 @@ button {
   box-shadow:0 25px 80px rgba(0,0,0,.75);
 }
 
-.light-square{background:#efe4c8}
-.dark-square{background:#332f28}
+.light-square{background:#d3a161}
+.dark-square{background:#4a2e1a}
 
 .selected-piece,.remote-selected-piece,.computer-selected-piece{
  outline:3px solid #f3e9d2!important;
@@ -5504,13 +5571,13 @@ button {
 
 .level-stats-list {
   max-height: 190px;
-  gap: 6px;
+  gap: 5px;
 }
 
 .level-stat-row {
-  min-height: 46px;
-  padding: 7px 9px;
-  border-radius: 9px;
+  min-height: 38px;
+  padding: 5px 8px;
+  border-radius: 8px;
 }
 
 #gameHistory {
@@ -6016,7 +6083,7 @@ button:focus-visible {
   min-width: 0;
   max-width: 100%;
   min-height: 50px;
-  justify-content: flex-start;
+  justify-content: space-between;
   padding: 7px 12px;
   border: 1px solid rgba(243,233,210,.18);
   border-radius: 14px;
@@ -6363,4 +6430,59 @@ button:focus-visible {
     grid-template-columns: 38px 38px minmax(44px, 1fr) 38px 38px;
     gap: 5px;
   }
+}
+
+/* ============================================================
+   بروز عام أوضح لكل عناصر الموقع والرقعة — أشكال فقط، بدون تغيير
+   الألوان أو منطق اللعب.
+   ============================================================ */
+
+.board {
+  border-width: 7px;
+  box-shadow:
+    0 20px 50px rgba(0,0,0,.6),
+    0 0 0 2px rgba(243,233,210,.32),
+    inset 0 0 0 1px rgba(0,0,0,.45) !important;
+}
+
+.square {
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,.18),
+    inset 0 1px 0 rgba(255,255,255,.16) !important;
+}
+
+.primary-btn,
+.secondary-btn,
+.game-option,
+.difficulty-btn,
+.home-action-btn {
+  box-shadow:
+    0 10px 24px rgba(0,0,0,.34),
+    inset 0 1px 0 rgba(255,255,255,.10);
+}
+
+.secondary-btn,
+.game-option,
+.difficulty-btn {
+  border-width: 2px;
+}
+
+.modal-box,
+#gameModal .modal-box {
+  border-width: 2px;
+  box-shadow:
+    0 24px 60px rgba(0,0,0,.55),
+    0 0 0 1px rgba(243,233,210,.12);
+}
+
+.game-header,
+.turn-box,
+.match-timer-card,
+.player,
+.level-stat-row,
+.room-setting-option,
+.exit-game-btn,
+.profile-top-btn,
+.friends-top-btn {
+  border-width: 1.5px;
 }
