@@ -1,6 +1,7 @@
 import './style.css'
 import { io } from 'socket.io-client'
 import { supabase } from './supabase.js'
+
 const AUDIO_SOURCES = {
   move: '/move.wav',
   win: '/win.wav',
@@ -18,14 +19,13 @@ function createGameAudio(src, volume) {
     audio.load()
   }
   catch (error) {
-    // بعض متصفحات الجوال تتجاهل load قبل أول تفاعل
+    // Audio preload may be unavailable before user interaction.
   }
 
   return audio
 }
 
-// Pool جاهز مسبقًا بدل cloneNode مع كل حركة.
-// هذا يقلل تأخير الصوت خصوصًا على الجوال.
+// Reuse audio elements to keep move playback responsive on mobile.
 const moveSoundPool =
   Array.from(
     { length: 4 },
@@ -93,14 +93,12 @@ function primeGameAudio() {
             audio.volume = originalVolume
           })
       }
-
       else {
         audio.pause()
         audio.currentTime = 0
         audio.volume = originalVolume
       }
     }
-
     catch (error) {
       audio.volume = originalVolume
     }
@@ -175,28 +173,82 @@ function playMoveSound() {
 const ONLINE_SERVER_URL =
   `${window.location.protocol}//${window.location.hostname}:3001`
 
-const socket = io(
-  import.meta.env.DEV
-    ? `http://${window.location.hostname}:3001`
-    : window.location.origin
-)
+const socket = io(ONLINE_SERVER_URL, { autoConnect:true, reconnection:true, reconnectionAttempts:Infinity });
 
 let onlineRoomCode = null
 let onlinePlayerColor = null
 let onlineMode = false
 let onlineOpponentConnected = false
 let onlineOpponentRating = null
+let onlineOpponentName = 'صديقك'
+let enableClock = false;
+let onlineRoomSettings = {
+  
+  
+  mode: 'no-time',
+  minutes: null
+  
+}
 
+let onlineClocks = {
+  cream: 0,
+  black: 0,
+  turn: null
 
+}
 
-// ========================================
-// 🌐 أحداث الاتصال الأونلاين
-// ========================================
+socket.on('clock-update', data => {
+  onlineClocks = data
+  renderOnlineClocks()
+})
 
-socket.on('player-joined', () => {
+socket.on('time-ended', (data) => {
+  if (!onlineMode || gameOver) return
+
+  const won = data.winner === onlinePlayerColor
+  finishGame(won ? 'فزت! انتهى وقت الخصم ⏱️' : 'خسرت! انتهى وقتك ⏱️')
+})
+
+function formatClock(seconds) {
+  seconds = Math.max(0, Math.ceil(Number(seconds) || 0))
+  return String(Math.floor(seconds / 60)).padStart(2, '0') + ':' +
+    String(seconds % 60).padStart(2, '0')
+}
+
+function renderOnlineClocks() {
+  const timedOnlineGame =
+    onlineMode &&
+    onlineOpponentConnected &&
+    onlineRoomSettings?.mode === 'time'
+
+  const creamClock = document.querySelector('#creamClock')
+  const blackClock = document.querySelector('#blackClock')
+
+  if (creamClock) {
+    creamClock.textContent = formatClock(onlineClocks.cream)
+    creamClock.hidden = !timedOnlineGame
+  }
+
+  if (blackClock) {
+    blackClock.textContent = formatClock(onlineClocks.black)
+    blackClock.hidden = !timedOnlineGame
+  }
+}
+
+socket.on('player-joined', (data) => {
+
   if (!onlineMode) return
 
   onlineOpponentConnected = true
+  onlineOpponentName = data?.playerName || 'صديقك'
+  const opponentNameLabel =
+    document.querySelector('#onlineOpponentName')
+
+  if (opponentNameLabel) {
+    opponentNameLabel.textContent = onlineOpponentName
+  }
+
+  renderOnlineClocks()
   updateOnlineTurnUI()
 
   if (
@@ -205,7 +257,6 @@ socket.on('player-joined', () => {
     )
   ) {
     resetMatchTimer()
-    startMatchTimer()
   }
 })
 
@@ -271,6 +322,7 @@ socket.on('connect_error', (error) => {
 
 let selectedPiece = null
 let currentLevel = null
+
 let currentAuthUser = null
 async function loadCloudProfile(user) {
 
@@ -577,43 +629,43 @@ let pendingProfileSave =
 const RATING_START = 400
 const RATING_MIN = 400
 const RATING_MAX = 3000
-const RATING_K = 32
+const RATING_K = 24
 
 const RATING_TIERS = [
   {
     key: 'beginner',
     label: 'مبتدئ',
-    min: 400,
-    max: 799
+    min: 0,
+    max: 599
   },
   {
     key: 'rising',
-    label: 'مبتدئ متدرج',
-    min: 800,
-    max: 999
+    label: 'مبتدئ متقدم',
+    min: 600,
+    max: 899
   },
   {
     key: 'intermediate',
     label: 'متوسط',
-    min: 1000,
-    max: 1399
+    min: 900,
+    max: 1299
   },
   {
     key: 'advanced',
     label: 'متقدم',
-    min: 1400,
-    max: 1799
+    min: 1300,
+    max: 1699
   },
   {
     key: 'expert',
     label: 'خبير',
-    min: 1800,
-    max: 2199
+    min: 1700,
+    max: 2099
   },
   {
     key: 'grandmaster',
     label: 'جراند ماستر',
-    min: 2200,
+    min: 2100,
     max: 3000
   }
 ]
@@ -741,61 +793,82 @@ function setPlayerRating(value) {
       normalizeRating(value)
 }
 
+function getOnlinePerformanceSnapshot() {
+  const playerColor = onlinePlayerColor || 'cream'
+  const creamCount = document.querySelectorAll('.checker-piece[data-color="cream"]').length
+  const blackCount = document.querySelectorAll('.checker-piece[data-color="black"]').length
+  const playerCount = playerColor === 'cream' ? creamCount : blackCount
+  const opponentCount = playerColor === 'cream' ? blackCount : creamCount
+  const capturedDifference = Math.max(0, playerCount - opponentCount)
+  const margin = Math.abs(playerCount - opponentCount)
+  const elapsedMs = matchTimerStartedAt
+    ? matchTimerElapsedMs + (performance.now() - matchTimerStartedAt)
+    : matchTimerElapsedMs
+  const fastWin = elapsedMs < 180000
+
+  return {
+    moves: currentGameMoves,
+    pieceAdvantage: capturedDifference,
+    margin,
+    fastWin
+  }
+}
+
 function calculateRatingResult(
   playerWon,
-  opponentRating = onlineOpponentRating
+  opponentRating = onlineOpponentRating,
+  performance = {}
 ) {
-  const playerRating =
-    getPlayerRating()
+  const playerRating = getPlayerRating()
+  const safeOpponentRating = normalizeRating(
+    opponentRating == null ? playerRating : opponentRating
+  )
 
-  const safeOpponentRating =
-    normalizeRating(
-      opponentRating == null
-        ? playerRating
-        : opponentRating
-    )
-
-  const expectedScore =
+  const expected =
     1 /
-    (
-      1 +
-      Math.pow(
-        10,
-        (
-          safeOpponentRating -
-          playerRating
-        ) / 400
-      )
-    )
+    (1 + Math.pow(10, (safeOpponentRating - playerRating) / 400))
 
-  const actualScore =
-    playerWon ? 1 : 0
+  const actual = playerWon ? 1 : 0
+  const pieceAdvantage = Number(performance.pieceAdvantage || 0)
+  const margin = Number(performance.margin || 0)
+  const fastWin = Boolean(performance.fastWin)
+  const moveCount = Number(performance.moves || 0)
 
-  const rawChange =
-    Math.round(
-      RATING_K *
-      (actualScore - expectedScore)
-    )
+  let bonus = 0
+  let penalty = 0
 
-  const ratingAfter =
-    normalizeRating(
-      playerRating + rawChange
-    )
+  if (playerWon) {
+    if (fastWin) bonus += 12
+    if (pieceAdvantage >= 3) bonus += 10
+    if (moveCount > 0 && moveCount < 25) bonus += 6
+    if (margin >= 2) bonus += Math.min(10, margin * 2)
+  }
+
+  else {
+    penalty += Math.min(18, Math.max(6, margin * 2))
+    if (moveCount > 0 && moveCount <= 20) penalty -= 4
+  }
+
+  const adjusted =
+    RATING_K * (actual - expected) +
+    (playerWon ? bonus : -penalty)
+
+  const after = normalizeRating(playerRating + Math.round(adjusted))
 
   return {
     before: playerRating,
-    after: ratingAfter,
-    change:
-      ratingAfter - playerRating,
+    after,
+    change: after - playerRating,
     opponent: safeOpponentRating
   }
 }
 
-function applyOnlineRating(playerWon) {
+function applyOnlineRating(playerWon, performance = {}) {
   const result =
     calculateRatingResult(
       playerWon,
-      onlineOpponentRating
+      onlineOpponentRating,
+      performance
     )
 
   setPlayerRating(result.after)
@@ -805,6 +878,13 @@ function applyOnlineRating(playerWon) {
   lastRatingChange = result.change
 
   return result
+}
+
+function applyOnlineRatingChange(playerWon) {
+  return applyOnlineRating(
+    playerWon,
+    getOnlinePerformanceSnapshot()
+  )
 }
 
 function getRankCheckerClass(
@@ -1077,11 +1157,11 @@ function recordGameResult(
     lastRatingBefore
 
   if (level === 'online') {
-    // الأونلاين فقط يغيّر التصنيف.
-    // لو انسحب الخصم قبل وصول تصنيفه، نحسبه مؤقتًا
-    // كتقييم قريب من تقييم اللاعب بدل تجاهل النتيجة.
     ratingResult =
-      applyOnlineRating(playerWon)
+      applyOnlineRating(
+        playerWon,
+        options.performance || getOnlinePerformanceSnapshot()
+      )
   }
 
   // ========================================
@@ -1659,8 +1739,6 @@ function showHome() {
 
       <section id="homeMainContent">
 
-      
-
         <h1 class="game-title">الدامة</h1>
 
         <p class="subtitle">
@@ -1668,19 +1746,17 @@ function showHome() {
         </p>
 
         <div class="menu">
-          <button id="newGameBtn" class="primary-btn">
+          <button id="newGameBtn" class="primary-btn home-action-btn">
             لعبة جديدة
           </button>
 
           <button
             id="leaderboardBtn"
-            class="secondary-btn"
+            class="secondary-btn home-action-btn leaderboard-action-btn"
           >
             ♛ لوحة الصدارة
           </button>
         </div>
-
-        
 
       </section>
 
@@ -3378,7 +3454,6 @@ function setupHomeEvents() {
       }
     )
 
-
   // ========================================
   // لعبة جديدة
   // ========================================
@@ -3430,6 +3505,13 @@ function setupHomeEvents() {
   document
     .querySelector('#aiBtn')
     .addEventListener(
+      'click',
+      showDifficulty
+    )
+
+  document
+    .querySelector('#aiHomeBtn')
+    ?.addEventListener(
       'click',
       showDifficulty
     )
@@ -3739,7 +3821,7 @@ function showOnlineMenu() {
     .querySelector('#createRoomBtn')
     .addEventListener(
       'click',
-      createOnlineRoom
+      showRoomCustomization
     )
 
 
@@ -3752,6 +3834,91 @@ function showOnlineMenu() {
     )
 }
 // ========================================
+
+// ========================================
+// تخصيص الروم قبل الإنشاء
+// ========================================
+
+function showRoomCustomization() {
+
+  const modalBox =
+    document.querySelector('.modal-box')
+
+  modalBox.innerHTML = `
+    <div class="room-settings-page">
+
+      <button id="roomSettingsBack" class="back-btn modern-back-btn">→</button>
+
+      <div class="online-modal-badge">⚙️ تخصيص الروم</div>
+
+      <h2>إعدادات المباراة</h2>
+      <p class="modal-description">
+        اختر طريقة اللعب قبل بدء الروم
+      </p>
+
+      <button type="button" class="room-setting-option selected" data-mode="no-time">
+        <strong>♟️ اللعب بدون وقت</strong>
+        <small>مباراة مفتوحة بدون مؤقت</small>
+      </button>
+
+      <button type="button" class="room-setting-option" data-mode="time">
+        <strong>⏱️ اللعب مع وقت</strong>
+        <small>كل لاعب لديه وقته الخاص مثل الشطرنج</small>
+      </button>
+
+      <div id="timeChoices" class="time-choices" hidden>
+        <button type="button" data-min="1">1 دقيقة</button>
+        <button type="button" data-min="5" class="active">5 دقائق</button>
+        <button type="button" data-min="10">10 دقائق</button>
+      </div>
+
+      <button id="startRoomBtn" class="join-room-submit-btn">
+        بدء المباراة ←
+      </button>
+
+    </div>
+  `
+
+  let mode = 'no-time'
+  let minutes = 5
+
+  document.querySelectorAll('.room-setting-option')
+    .forEach(card => {
+      card.onclick = () => {
+        document.querySelectorAll('.room-setting-option')
+          .forEach(c => c.classList.remove('selected'))
+
+        card.classList.add('selected')
+        mode = card.dataset.mode
+
+        document.querySelector('#timeChoices').hidden = mode !== 'time'
+      }
+    })
+
+  document.querySelectorAll('.time-choices button')
+    .forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.time-choices button')
+          .forEach(b => b.classList.remove('active'))
+
+        btn.classList.add('active')
+        minutes = Number(btn.dataset.min)
+      }
+    })
+
+  document.querySelector('#roomSettingsBack').onclick =
+    showOnlineMenu
+
+  document.querySelector('#startRoomBtn').onclick = () => {
+    onlineRoomSettings = {
+      mode: mode,
+      minutes: mode === 'time' ? minutes : null
+    }
+
+    createOnlineRoom()
+  }
+}
+
 // إنشاء روم أونلاين
 // ========================================
 
@@ -3765,6 +3932,10 @@ function createOnlineRoom() {
 
   socket.emit(
     'create-room',
+    {
+      ...onlineRoomSettings,
+      playerName: playerProfile.name
+    },
     response => {
       if (!response?.success) {
         alert(
@@ -3779,6 +3950,8 @@ function createOnlineRoom() {
       onlineMode = true
       onlineOpponentConnected = false
       onlineOpponentRating = null
+      onlineOpponentName = 'صديقك'
+      if(response.settings) onlineRoomSettings=response.settings
       currentLevel = 'online'
 
       // صاحب الروم يدخل اللوحة مباشرة
@@ -3947,6 +4120,7 @@ function joinOnlineRoom() {
   socket.emit(
     'join-room',
     code,
+    playerProfile.name,
     response => {
       if (!response?.success) {
         error.textContent =
@@ -3961,6 +4135,8 @@ function joinOnlineRoom() {
       onlineMode = true
       onlineOpponentConnected = true
       onlineOpponentRating = null
+      onlineOpponentName = response.opponentName || 'صديقك'
+      if(response.settings) onlineRoomSettings=response.settings
       currentLevel = 'online'
 
       error.textContent = ''
@@ -4004,15 +4180,15 @@ function startOnlineGame() {
       ? 'cream-player'
       : 'black-player'
 
-  const localColorName =
+  const localClockId =
     localColor === 'cream'
-      ? 'الحليبي'
-      : 'الأسود'
+      ? 'creamClock'
+      : 'blackClock'
 
-  const opponentColorName =
+  const opponentClockId =
     opponentColor === 'cream'
-      ? 'الحليبي'
-      : 'الأسود'
+      ? 'creamClock'
+      : 'blackClock'
 
   document.querySelector('#app').innerHTML = `
     <main class="game-page">
@@ -4048,7 +4224,7 @@ function startOnlineGame() {
           </div>
         </div>
 
-        <div class="turn-box">
+      <div class="turn-box">
           <span
             id="turnPiece"
             class="turn-piece"
@@ -4060,44 +4236,45 @@ function startOnlineGame() {
         </div>
       </div>
 
+      <div
+        id="computerPlayer"
+        class="player online-player-card online-opponent-player"
+      >
+        <span class="player-piece ${opponentPieceClass}"></span>
+
+        <div>
+          <strong id="onlineOpponentName">صديقك</strong>
+        </div>
+
+        <strong id="${opponentClockId}" class="player-clock" hidden>00:00</strong>
+      </div>
+
       <div id="board" class="board"></div>
 
-      <div class="players">
-
+      <div class="players online-own-player">
         <div
           id="humanPlayer"
-          class="player"
+          class="player online-player-card"
         >
-          <span
-            class="player-piece ${localPieceClass}"
-          ></span>
+          <span class="player-piece ${localPieceClass}"></span>
 
           <div>
             <strong>${playerProfile.name}</strong>
-            <small>أنت • ${localColorName}</small>
           </div>
+
+          <strong id="${localClockId}" class="player-clock" hidden>00:00</strong>
         </div>
-
-        <div class="vs">VS</div>
-
-        <div
-          id="computerPlayer"
-          class="player"
-        >
-          <span
-            class="player-piece ${opponentPieceClass}"
-          ></span>
-
-          <div>
-            <strong>صديقك</strong>
-            <small>${opponentColorName}</small>
-          </div>
-        </div>
-
       </div>
 
     </main>
   `
+
+  const opponentNameLabel =
+    document.querySelector('#onlineOpponentName')
+
+  if (opponentNameLabel) {
+    opponentNameLabel.textContent = onlineOpponentName
+  }
 
   createBoard()
 
@@ -4115,6 +4292,7 @@ function startOnlineGame() {
 
   updatePlayerHighlight()
   updateOnlineTurnUI()
+  renderOnlineClocks()
 
   if (onlineOpponentConnected) {
     startMatchTimer()
@@ -4197,7 +4375,7 @@ function updateOnlineTurnUI() {
   }
 
   else {
-    turnText.textContent = 'دور خصمك'
+    turnText.textContent = ''
   }
 
   updatePlayerHighlight()
@@ -4539,13 +4717,13 @@ function showDifficulty() {
   modalBox.innerHTML = `
     <button id="backBtn" class="back-btn">→</button>
 
-    <h2>ضد الكمبيوتر</h2>
+    <h2 class="ai-title">♛ ضد الكمبيوتر</h2>
 
     <p class="modal-description">
       اختر مستوى الصعوبة
     </p>
 
-    <div class="difficulty-options">
+    <div class="difficulty-options ai-difficulty-grid">
 
       <button class="difficulty-btn" data-level="easy">
         <span class="difficulty-title">سهل</span>
@@ -4746,7 +4924,8 @@ currentGameRecorded = false
           </div>
         </div>
 
-        <div class="turn-box">
+        <div id="onlineClockContainer"></div>
+      <div class="turn-box">
           <span
             id="turnPiece"
             class="turn-piece cream-turn"
@@ -5462,6 +5641,7 @@ function moveSelectedPiece(square) {
 )
 
 playMoveSound()
+
   // ترقية الحجر إذا وصل آخر صف
   promoteIfNeeded(
     selectedPiece
@@ -5543,6 +5723,7 @@ playMoveSound()
 
 const COMPUTER_MOVE_DELAY = 800
 const COMPUTER_CAPTURE_DELAY = 650
+const COMPUTER_PREVIEW_DELAY = 850
 
 // ========================================
 // بدء دور الكمبيوتر
@@ -5551,9 +5732,7 @@ const COMPUTER_CAPTURE_DELAY = 650
 function startComputerTurn() {
   currentTurn = 'black'
 
-  setTurnText(
-    'اصبر افكر'
-  )
+  setTurnText('')
 
   updatePlayerHighlight()
 
@@ -5585,10 +5764,10 @@ function computerMove() {
   // نشغله في Worker حتى ما تتجمد الصفحة
   // ========================================
 
-  if (currentLevel === 'impossible') {
-    startImpossibleComputerMove(moves)
+  if (currentLevel === "impossible") {
+    executeComputerMove(chooseHardMove(moves))
     return
-  }
+}
 
   // ========================================
   // 🛡️ خالد
@@ -5603,6 +5782,12 @@ function computerMove() {
   // باقي المستويات
   const chosen =
     chooseComputerMove(moves)
+
+  // حماية إضافية: لا يعلق دور الكمبيوتر بدون حركة
+  if (!chosen) {
+    executeComputerMove(moves[0])
+    return
+  }
 
   executeComputerMove(chosen)
 }
@@ -5620,9 +5805,7 @@ function startImpossibleComputerMove(moves) {
   // نقفل أي Worker قديم
   stopImpossibleWorker()
 
-  setTurnText(
-    'اصبر يامسلم'
-  )
+  setTurnText('')
 
   const startedAt = performance.now()
 
@@ -5677,9 +5860,7 @@ function startImpossibleComputerMove(moves) {
         !gameOver &&
         currentTurn === 'black'
       ) {
-        setTurnText(
-          `${data.depth}  افكر اصبر`
-        )
+        setTurnText('')
       }
 
       return
@@ -5833,7 +6014,7 @@ function stopImpossibleWorker() {
 function startKhaledComputerMove(moves) {
   stopKhaledWorker()
 
-  setTurnText('افكر يخوي')
+  setTurnText('')
 
   const startedAt =
     performance.now()
@@ -5859,7 +6040,7 @@ function startKhaledComputerMove(moves) {
           !gameOver &&
           currentTurn === 'black'
         ) {
-          setTurnText('عطني فرصه')
+          setTurnText('')
         }
 
         return
@@ -5915,7 +6096,7 @@ function startKhaledComputerMove(moves) {
               elapsed
           )
 
-        setTurnText('اركد')
+        setTurnText('')
 
         khaledMoveDelayTimer =
           setTimeout(
@@ -5946,7 +6127,7 @@ function startKhaledComputerMove(moves) {
             elapsed
         )
 
-      setTurnText('اصبر')
+      setTurnText('')
 
       khaledMoveDelayTimer =
         setTimeout(
@@ -6011,7 +6192,7 @@ function startKhaledComputerMove(moves) {
             elapsed
         )
 
-      setTurnText('اصبر افكر')
+      setTurnText('')
 
       khaledMoveDelayTimer =
         setTimeout(
@@ -6222,32 +6403,20 @@ function executeImpossibleTurn(
   endComputerTurn()
 }
 function chooseComputerMove(moves) {
-  // السهل
-  if (currentLevel === 'easy') {
-    return chooseEasyMove(moves)
+
+  if (currentLevel === "easy") {
+    return chooseEasyMove(moves);
   }
 
-  // المتوسط
-  if (currentLevel === 'medium') {
-    return chooseMediumMove(moves)
+  if (currentLevel === "medium") {
+    return chooseMediumMove(moves);
   }
 
-  // الصعب
-  if (currentLevel === 'hard') {
-    return chooseHardMove(moves)
+  if (currentLevel === "hard") {
+    return chooseHardMove(moves);
   }
 
-  // ☠️ أتحداك تفوز
-  if (currentLevel === 'impossible') {
-  // المستوى المستحيل يتم تشغيله الآن
-  // من computerMove عن طريق Web Worker
-  return chooseHardMove(moves)
-}
-
-  if (currentLevel === 'khaled') {
-    // خالد يعمل من computerMove داخل Worker مستقل.
-    return chooseHardMove(moves)
-  }
+  return moves[Math.floor(Math.random() * moves.length)];
 }
 
 
@@ -9429,8 +9598,6 @@ function executeComputerMove(move) {
 
   const piece = move.piece
 
-  showComputerSelectedPiece(piece)
-
   if (
     !piece ||
     !document.body.contains(piece)
@@ -9439,124 +9606,137 @@ function executeComputerMove(move) {
     return
   }
 
-  // هل كان ملك قبل الحركة؟
-  const wasKing =
-    piece.dataset.king === 'true'
+  showComputerSelectedPiece(piece)
 
-  // ========================================
-  // حذف الحجر المأكول
-  // ========================================
-
-  if (move.capture) {
-    const capturedPiece =
-      getPieceAt(
-        move.capturedRow,
-        move.capturedCol
-      )
-
-    if (capturedPiece) {
-      capturedPiece.remove()
-    }
-  }
-
-  // ========================================
-  // تحديد خانة الوصول
-  // ========================================
-
-  const target =
-    getSquare(
-      move.row,
-      move.col
-    )
-
-  if (!target) {
-    endComputerTurn()
-    return
-  }
-
-  // ========================================
-  // تحريك الحجر الأسود
-  // ========================================
-
-  target.appendChild(piece)
-  playMoveSound()
-
-  // ========================================
-  // الترقية إلى ملك
-  // ========================================
-
-  promoteIfNeeded(piece)
-
-  const isKingNow =
-    piece.dataset.king === 'true'
-
-  const justBecameKing =
-    !wasKing && isKingNow
-
-  // ========================================
-  // فحص نهاية اللعبة
-  // ========================================
-
-  if (checkGameStatus()) {
-    return
-  }
-
-  // ========================================
-  // إذا صار ملك الآن
-  // ينتهي دوره فورًا
-  // حتى لو عنده أكلة جديدة
-  // ========================================
-
-  if (justBecameKing) {
-    endComputerTurn()
-    return
-  }
-
-  // ========================================
-  // الأكل المتعدد
-  // إذا كان ملك من قبل أو حجر عادي
-  // ولم يترقَّ الآن
-  // ========================================
-
-  if (move.capture) {
-    const moreCaptures =
-      getCaptureMoves(piece)
-
-    if (
-      moreCaptures.length > 0
-    ) {
-      setTurnText(
-        ''
-      )
-
-      setTimeout(() => {
-        const possibleMoves =
-          moreCaptures.map(
-            (nextMove) => ({
-              piece,
-              ...nextMove
-            })
-          )
-
-        const nextMove =
-          chooseComputerMove(
-            possibleMoves
-          )
-
-        executeComputerMove(
-          nextMove
-        )
-      }, COMPUTER_CAPTURE_DELAY)
-
+  setTimeout(() => {
+    if (gameOver || currentTurn !== 'black') {
+      clearComputerSelectedPiece()
       return
     }
-  }
 
-  // ========================================
-  // انتهى دور الكمبيوتر
-  // ========================================
+    // لا توجد دالة شرح لخالد في هذا الملف، لا نوقف حركة الكمبيوتر بسببها
 
-  endComputerTurn()
+    // هل كان ملك قبل الحركة؟
+    const wasKing =
+      piece.dataset.king === 'true'
+
+    // ========================================
+    // حذف الحجر المأكول
+    // ========================================
+
+    if (move.capture) {
+      const capturedPiece =
+        getPieceAt(
+          move.capturedRow,
+          move.capturedCol
+        )
+
+      if (capturedPiece) {
+        capturedPiece.remove()
+      }
+    }
+
+    // ========================================
+    // تحديد خانة الوصول
+    // ========================================
+
+    const target =
+      getSquare(
+        move.row,
+        move.col
+      )
+
+    if (!target) {
+      clearComputerSelectedPiece()
+      endComputerTurn()
+      return
+    }
+
+    // ========================================
+    // تحريك الحجر الأسود
+    // ========================================
+
+    target.appendChild(piece)
+    playMoveSound()
+    clearComputerSelectedPiece()
+
+    // ========================================
+    // الترقية إلى ملك
+    // ========================================
+
+    promoteIfNeeded(piece)
+
+    const isKingNow =
+      piece.dataset.king === 'true'
+
+    const justBecameKing =
+      !wasKing && isKingNow
+
+    // ========================================
+    // فحص نهاية اللعبة
+    // ========================================
+
+    if (checkGameStatus()) {
+      return
+    }
+
+    // ========================================
+    // إذا صار ملك الآن
+    // ينتهي دوره فورًا
+    // حتى لو عنده أكلة جديدة
+    // ========================================
+
+    if (justBecameKing) {
+      endComputerTurn()
+      return
+    }
+
+    // ========================================
+    // الأكل المتعدد
+    // إذا كان ملك من قبل أو حجر عادي
+    // ولم يترقَّ الآن
+    // ========================================
+
+    if (move.capture) {
+      const moreCaptures =
+        getCaptureMoves(piece)
+
+      if (
+        moreCaptures.length > 0
+      ) {
+        setTurnText(
+          ''
+        )
+
+        setTimeout(() => {
+          const possibleMoves =
+            moreCaptures.map(
+              (nextMove) => ({
+                piece,
+                ...nextMove
+              })
+            )
+
+          const nextMove =
+            chooseComputerMove(
+              possibleMoves
+            )
+
+          executeComputerMove(
+            nextMove
+          )
+        }, COMPUTER_CAPTURE_DELAY)
+
+        return
+      }
+    }
+
+    // ========================================
+    // انتهى دور الكمبيوتر
+    // ========================================
+
+    endComputerTurn()
+  }, COMPUTER_PREVIEW_DELAY)
 }
 
 // ========================================
@@ -10148,3 +10328,4 @@ function calculatePlayerWinChance() {
 // ========================================
 
 showHome()
+

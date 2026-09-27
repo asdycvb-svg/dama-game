@@ -155,15 +155,17 @@ h1 {
 ========================= */
 
 .menu {
-  width: 320px;
-
-  max-width: 100%;
+  width: min(360px, 100%);
 
   display: flex;
 
   flex-direction: column;
 
-  gap: 12px;
+  gap: 14px;
+}
+
+.home .menu {
+  align-items: stretch;
 }
 
 button {
@@ -1511,9 +1513,9 @@ button {
   display: grid;
 
   grid-template-columns:
-    repeat(4, minmax(0, 1fr));
+    repeat(3, minmax(0, 1fr));
 
-  gap: 12px;
+  gap: 14px;
 }
 
 .profile-stat-card {
@@ -1523,15 +1525,17 @@ button {
   align-items: center;
   justify-content: center;
 
-  min-height: 105px;
+  min-height: 120px;
 
-  padding: 15px 10px;
+  padding: 18px 12px;
 
-  border-radius: 15px;
+  border-radius: 18px;
 
-  background: #f7f2e8;
+  background: linear-gradient(180deg, #f9f5ee, #efe7d8);
 
   border: 1px solid #ded6c7;
+
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 .profile-stat-card span {
@@ -1655,6 +1659,24 @@ button {
   flex-direction: column;
 
   gap: 9px;
+
+  max-height: 320px;
+
+  overflow-y: auto;
+
+  padding-right: 6px;
+
+  scrollbar-width: thin;
+  scrollbar-color: #c7bca5 #f3eee3;
+}
+
+#gameHistory::-webkit-scrollbar {
+  width: 8px;
+}
+
+#gameHistory::-webkit-scrollbar-thumb {
+  background: #c7bca5;
+  border-radius: 999px;
 }
 
 .history-game-item {
@@ -3689,9 +3711,12 @@ transform: none;
 
 }
 #turnText {
-  font-size: 45px;
+  display: inline-block;
+  min-width: 3.5em;
+  text-align: center;
+  font-size: 17px;
   font-weight: 800;
-  letter-spacing: 0.3px;
+  line-height: 1.2;
 }
 /* =========================
    تحسين سلاسة الدامة للجوال
@@ -4332,3 +4357,369 @@ transform: none;
     }
 }
 
+
+/* =========================
+   تخصيص الروم
+========================= */
+
+.room-settings-page{
+  position:relative;
+  text-align:center;
+  padding: 8px 2px 4px;
+}
+
+.room-settings-page h2 {
+  margin: 18px 0 6px;
+  font-size: 25px;
+}
+
+.room-settings-page .modal-description {
+  margin: 0 0 22px;
+}
+
+.room-setting-option{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-height: 82px;
+  background: linear-gradient(145deg, #22211e, #171717);
+  border: 1px solid rgba(243,233,210,.12);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin: 10px 0;
+  cursor:pointer;
+  text-align:right;
+  color: #f3e9d2;
+  font: inherit;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.room-setting-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(243,233,210,.3);
+}
+
+.room-setting-option strong{
+  display:block;
+  font-size:18px;
+  color:#f3e9d2;
+}
+
+.room-setting-option small{
+  color: #aaa398;
+  font-size: 13px;
+}
+
+.room-setting-option.selected{
+  border-color: rgba(243,233,210,.62);
+  background: linear-gradient(145deg, rgba(100,75,47,.48), #211f1b);
+  box-shadow: inset 0 0 0 1px rgba(243,233,210,.08);
+}
+
+.time-choices{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+
+.time-choices[hidden] {
+  display: none;
+}
+
+.time-choices button{
+  min-height: 44px;
+  background: #171717;
+  color: #e9e2d5;
+  border: 1px solid rgba(243,233,210,.16);
+  padding: 10px 8px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+
+.time-choices button.active{
+  background: #f3e9d2;
+  color: #171614;
+  border-color: #f3e9d2;
+}
+
+#startRoomBtn{
+  width: 100%;
+  min-height: 48px;
+  margin-top: 18px;
+  border-radius: 12px;
+}
+
+
+/* ===== Modern UI Upgrade ===== */
+
+.home-action-btn {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px !important;
+  min-height: 64px;
+  letter-spacing: .2px;
+  backdrop-filter: blur(12px);
+}
+
+.home-action-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,.12), transparent);
+  opacity: 0;
+  transition: .25s;
+}
+
+.home-action-btn:hover::before {
+  opacity: 1;
+}
+
+.primary-btn.home-action-btn {
+  box-shadow: 0 12px 35px rgba(243,233,210,.18);
+}
+
+.leaderboard-action-btn {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  border-radius:18px !important;
+}
+
+
+/* لعبة جديدة / اختيار اللعب */
+#gameModal .modal-box {
+  background:
+    linear-gradient(160deg,#1b1916,#101010);
+  border:1px solid rgba(243,233,210,.18);
+  border-radius:28px;
+  padding:38px 30px;
+}
+
+#gameModal .modal-box h2 {
+  font-size:32px;
+}
+
+.game-options {
+  gap:16px !important;
+}
+
+.game-option {
+  border-radius:22px !important;
+  min-height:90px;
+  background:
+    linear-gradient(145deg,#22201c,#151515) !important;
+  border:1px solid rgba(243,233,210,.12) !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+
+.game-option:hover {
+  transform:translateY(-4px) !important;
+  border-color:#f3e9d2 !important;
+}
+
+.option-icon {
+  border-radius:18px !important;
+  width:62px !important;
+  height:62px !important;
+  box-shadow:0 8px 20px rgba(0,0,0,.3);
+}
+
+
+/* صفحة ضد الكمبيوتر */
+.ai-title {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+
+.ai-difficulty-grid {
+  display:grid !important;
+  grid-template-columns:1fr;
+  gap:14px;
+}
+
+.difficulty-btn {
+  position:relative;
+  overflow:hidden;
+  border-radius:20px !important;
+  padding:20px !important;
+  background:
+    linear-gradient(145deg,#24211c,#151515) !important;
+  border:1px solid rgba(243,233,210,.14) !important;
+}
+
+.difficulty-btn:hover {
+  border-color:#f3e9d2 !important;
+}
+
+.difficulty-title {
+  font-size:20px !important;
+}
+
+.difficulty-description {
+  margin-top:8px;
+  line-height:1.8;
+}
+
+
+/* زر الرجوع */
+.back-btn,.close-btn {
+  background:rgba(255,255,255,.06) !important;
+  border-radius:14px !important;
+}
+
+
+/* نافذة تخصيص الروم */
+.online-choice-card,
+.time-option {
+  border-radius:20px !important;
+}
+
+
+/* تأثير عام */
+button {
+  -webkit-tap-highlight-color:transparent;
+}
+
+
+.online-opponent-player,
+.players.online-own-player {
+  width: min(600px, 90vw);
+  max-width: 100%;
+}
+
+.online-opponent-player {
+  min-height: 48px;
+  margin: 0 auto 10px;
+}
+
+.players.online-own-player {
+  justify-content: flex-start;
+  margin: 10px auto 0;
+}
+
+.online-player-card,
+.online-player-card.active-player {
+  width: 100%;
+  min-height: 48px;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.online-player-card > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.online-player-card > div strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-clock {
+  min-width: 68px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f3e9d2;
+  font-size: 18px !important;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.player-clock[hidden] {
+  display: none;
+}
+
+@media (max-width: 650px) {
+  .online-opponent-player,
+  .players.online-own-player {
+    width: 94vw;
+  }
+
+  .online-player-card {
+    gap: 6px;
+    padding: 6px 2px;
+  }
+
+  .online-player-card .player-piece {
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+  }
+
+  .player-clock {
+    min-width: 56px;
+    font-size: 16px !important;
+  }
+}
+
+
+/* ===== تحسينات الواجهة الجديدة ===== */
+.home .menu button,
+.menu button{
+  border-radius:18px;
+  min-height:62px;
+  backdrop-filter:blur(10px);
+}
+
+.game-option,.difficulty-btn{
+  border-radius:20px;
+  padding:22px;
+}
+
+.board{
+  border-radius:22px;
+  border-width:6px;
+  box-shadow:0 25px 80px rgba(0,0,0,.75);
+}
+
+.light-square{background:#efe4c8}
+.dark-square{background:#332f28}
+
+.selected-piece,.remote-selected-piece,.computer-selected-piece{
+ outline:3px solid #f3e9d2!important;
+ box-shadow:0 0 25px rgba(243,233,210,.8)!important;
+ transform:scale(1.06)!important;
+}
+
+/* عرض قطعة الكمبيوتر المحددة */
+.computer-selected-piece::before{
+ content:'';
+ position:absolute;
+ inset:12%;
+ border:2px solid #fff;
+ border-radius:50%;
+}
+
+.profile-stats-grid{
+ display:grid;
+ grid-template-columns:repeat(3,1fr);
+ gap:14px;
+}
+
+.profile-stat-card{
+ min-height:130px;
+ border-radius:20px;
+}
+
+.history-list{
+ max-height:420px;
+ overflow-y:auto;
+ scrollbar-width:thin;
+}
+
+@media(max-width:700px){
+ .profile-stats-grid{grid-template-columns:repeat(2,1fr)}
+}

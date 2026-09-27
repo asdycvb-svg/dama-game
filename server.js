@@ -68,6 +68,96 @@ function getPlayerColor(room, socketId) {
 }
 
 
+function normalizeRoomSettings(settings) {
+  const mode = settings?.mode === 'time'
+    ? 'time'
+    : 'no-time'
+  const requestedMinutes = Number(settings?.minutes)
+  const minutes = [1, 5, 10].includes(requestedMinutes)
+    ? requestedMinutes
+    : 5
+
+  return {
+    mode,
+    minutes: mode === 'time' ? minutes : null
+  }
+}
+
+
+function normalizePlayerName(name) {
+  const cleanName = String(name || '').trim().slice(0, 32)
+  return cleanName || 'لاعب'
+}
+
+
+function clearRoomClock(room) {
+  if (room.timerInterval) {
+    clearInterval(room.timerInterval)
+    room.timerInterval = null
+  }
+}
+
+
+function emitRoomClock(room, code) {
+  io.to(code).emit('clock-update', {
+    cream: Math.ceil(room.timers.cream / 1000),
+    black: Math.ceil(room.timers.black / 1000),
+    turn: room.timerStarted
+  })
+}
+
+
+function endRoomOnTime(room, code, loser) {
+  clearRoomClock(room)
+  room.finished = true
+  room.timerStarted = null
+  emitRoomClock(room, code)
+  io.to(code).emit('time-ended', {
+    winner: loser === 'cream' ? 'black' : 'cream',
+    loser
+  })
+}
+
+
+function updateRoomClock(room, code) {
+  if (!room.timerStarted || !room.timerLastTick) return false
+
+  const now = Date.now()
+  const elapsed = now - room.timerLastTick
+  room.timerLastTick = now
+  room.timers[room.timerStarted] = Math.max(
+    0,
+    room.timers[room.timerStarted] - elapsed
+  )
+
+  if (room.timers[room.timerStarted] === 0) {
+    endRoomOnTime(room, code, room.timerStarted)
+    return true
+  }
+
+  return false
+}
+
+
+function startRoomClock(room, code, color = room.turn) {
+  if (
+    room.settings?.mode !== 'time' ||
+    !room.guest ||
+    room.finished
+  ) return
+
+  clearRoomClock(room)
+  room.timerStarted = color
+  room.timerLastTick = Date.now()
+  emitRoomClock(room, code)
+
+  room.timerInterval = setInterval(() => {
+    if (updateRoomClock(room, code)) return
+    emitRoomClock(room, code)
+  }, 250)
+}
+
+
 function clearSocketRoomData(socket) {
   socket.data.roomCode = null
   socket.data.playerColor = null
@@ -86,6 +176,8 @@ function closeRoomForSocket(socket) {
     clearSocketRoomData(socket)
     return
   }
+
+  clearRoomClock(room)
 
   const otherId =
     room.host === socket.id
@@ -139,7 +231,12 @@ io.on(
 
     socket.on(
       'create-room',
-      callback => {
+      (settings, callback) => {
+
+        if (typeof settings === 'function') {
+          callback = settings
+          settings = {}
+        }
 
         // لو اللاعب داخل روم قديم
         // نخرجه منه أولًا.
@@ -148,12 +245,25 @@ io.on(
         const code =
           generateRoomCode()
 
+        const roomSettings =
+          normalizeRoomSettings(settings)
+
         rooms.set(
           code,
           {
             host: socket.id,
+            hostName: normalizePlayerName(settings?.playerName),
             guest: null,
-            turn: 'cream'
+            turn: 'cream',
+            settings: roomSettings,
+            timers: {
+              cream: (roomSettings.minutes || 0) * 60_000,
+              black: (roomSettings.minutes || 0) * 60_000
+            },
+            timerStarted: null,
+            timerLastTick: null,
+            timerInterval: null,
+            finished: false
           }
         )
 
@@ -163,11 +273,14 @@ io.on(
         socket.data.playerColor =
           'cream'
 
-        callback({
-          success: true,
-          code,
-          color: 'cream'
-        })
+        if (typeof callback === "function") {
+  callback({
+    success: true,
+    code,
+    color: "cream",
+    settings: rooms.get(code)?.settings
+  });
+}
 
         console.log(
           `Room created: ${code}`
@@ -184,12 +297,21 @@ io.on(
       'join-room',
       (
         rawCode,
+        playerNameOrCallback,
         callback
       ) => {
 
+        const playerName =
+          typeof playerNameOrCallback === 'string'
+            ? normalizePlayerName(playerNameOrCallback)
+            : 'لاعب'
+
+        if (typeof playerNameOrCallback === 'function') {
+          callback = playerNameOrCallback
+        }
+
         const code =
-          String(rawCode || '')
-            .trim()
+          String(rawCode).trim()
 
         const room =
           rooms.get(code)
@@ -227,6 +349,7 @@ io.on(
         closeRoomForSocket(socket)
 
         room.guest = socket.id
+        room.guestName = playerName
         room.turn = 'cream'
 
         socket.join(code)
@@ -235,18 +358,23 @@ io.on(
         socket.data.playerColor =
           'black'
 
-        callback({
-          success: true,
+if (typeof callback === "function") {
+  callback({
+    success: true,
+    code: code,
+    color: 'black',
+    settings: room.settings,
+    opponentName: room.hostName
+  });
+}
+
+        socket.to(code).emit('player-joined', {
           code,
-          color: 'black'
+          settings: room.settings,
+          playerName: room.guestName
         })
 
-        io
-          .to(code)
-          .emit(
-            'player-joined',
-            { code }
-          )
+        startRoomClock(room, code, 'cream')
 
         console.log(
           `Player joined: ${code}`
@@ -255,7 +383,7 @@ io.on(
     )
 
 
-    // ========================================
+// ========================================
     // حركة لاعب
     // ========================================
 
@@ -274,6 +402,8 @@ io.on(
         if (!room || !room.guest) {
           return
         }
+
+        if (room.finished) return
 
         const playerColor =
           getPlayerColor(
@@ -295,6 +425,11 @@ io.on(
           return
         }
 
+        if (room.settings?.mode === 'time') {
+          if (updateRoomClock(room, code)) return
+          if (room.timerStarted !== playerColor) return
+        }
+
         const nextTurn =
           move?.nextTurn
 
@@ -306,6 +441,9 @@ io.on(
         }
 
         room.turn = nextTurn
+        if (room.settings?.mode === 'time') {
+          startRoomClock(room, code, nextTurn)
+        }
 
         socket
           .to(code)
@@ -367,12 +505,20 @@ io.on(
         }
 
         room.turn = 'cream'
+        room.finished = false
+        clearRoomClock(room)
+        room.timers = {
+          cream: (room.settings.minutes || 0) * 60_000,
+          black: (room.settings.minutes || 0) * 60_000
+        }
 
         io
           .to(code)
           .emit(
             'restart-game'
           )
+
+        startRoomClock(room, code, 'cream')
       }
     )
 
