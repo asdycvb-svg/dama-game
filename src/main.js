@@ -614,10 +614,12 @@ function showFriendsInbox(view) {
   const homePanel = document.querySelector('#friendsHomePanel')
   const requestsPanel = document.querySelector('#friendRequestsPanel')
   const gameInvitesPanel = document.querySelector('#gameInvitesPanel')
+  const friendsHeader = document.querySelector('.friends-page-header')
 
   homePanel.hidden = view !== 'home'
   requestsPanel.hidden = view !== 'friend-requests'
   gameInvitesPanel.hidden = view !== 'game-invites'
+  friendsHeader.hidden = view !== 'home'
 
   if (view === 'friend-requests') {
     refreshFriendsView()
@@ -643,7 +645,7 @@ async function refreshFriendsView() {
   if (loadingFriends) return
 
   loadingFriends = true
-  const [profileResult, codeResult, requestsResult, friendsResult] = await Promise.all([
+  let [profileResult, codeResult, requestsResult, friendsResult] = await Promise.all([
     supabase
       .from('profiles')
       .select('friend_code')
@@ -653,6 +655,31 @@ async function refreshFriendsView() {
     supabase.rpc('get_friend_requests'),
     supabase.rpc('get_my_friends')
   ])
+
+  if (
+    currentAuthUser &&
+    !profileResult.error &&
+    !profileResult.data &&
+    !codeResult.data
+  ) {
+    const profileUserId = currentAuthUser.id
+    const profileLoaded = await loadCloudProfile(currentAuthUser)
+    if (profileLoaded === false || !currentAuthUser) {
+      loadingFriends = false
+      await refreshAuthUI()
+      return
+    }
+
+    ;[profileResult, codeResult] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('friend_code')
+        .eq('id', profileUserId)
+        .maybeSingle(),
+      supabase.rpc('get_my_friend_code')
+    ])
+  }
+
   loadingFriends = false
 
   const friendCode =
@@ -668,8 +695,9 @@ async function refreshFriendsView() {
 
   if (codeError || !friendCode) {
     if (message) {
-      message.textContent =
-        'معرّفك غير متاح. شغّل ترحيل الأصدقاء في Supabase ثم حدّث الصفحة.'
+      message.textContent = codeError
+        ? 'تعذر جلب معرّفك من قاعدة البيانات. تحقق من ترحيل الأصدقاء وإعدادات Supabase.'
+        : 'ملف حسابك لا يحتوي معرّفًا بعد؛ أعد فتح قائمة الأصدقاء بعد لحظات.'
     }
 
     const error = codeError || listError
@@ -1105,6 +1133,27 @@ async function loadCloudProfile(user) {
         })
 
     if (insertError) {
+      if (
+        insertError.code === '23503' &&
+        insertError.message?.includes('profiles_id_fkey')
+      ) {
+        const accountNotice =
+          document.querySelector('#accountSessionNotice')
+
+        if (accountNotice) {
+          accountNotice.hidden = false
+          accountNotice.textContent =
+            'جلسة الدخول هذه لم تعد مرتبطة بحساب صالح. سجّل الدخول مجددًا.'
+        }
+
+        await stopPresenceTracking()
+        await supabase.auth.signOut({ scope: 'local' })
+        currentAuthUser = null
+        activePresenceRoom = null
+        activePresenceWatchKey = null
+        return false
+      }
+
       console.error(
         'خطأ في إنشاء ملف اللاعب:',
         insertError
@@ -1117,7 +1166,7 @@ async function loadCloudProfile(user) {
 
     updateProfileUI()
 
-    return
+    return true
   }
 
   // حساب موجود
@@ -1143,8 +1192,30 @@ async function loadCloudProfile(user) {
       data.total_moves || 0,
 
     levels: {
-      ...defaults.levels,
-      ...(data.levels || {}),
+      easy: {
+        ...defaults.levels.easy,
+        ...(data.levels?.easy || {})
+      },
+      medium: {
+        ...defaults.levels.medium,
+        ...(data.levels?.medium || {})
+      },
+      hard: {
+        ...defaults.levels.hard,
+        ...(data.levels?.hard || {})
+      },
+      impossible: {
+        ...defaults.levels.impossible,
+        ...(data.levels?.impossible || {})
+      },
+      khaled: {
+        ...defaults.levels.khaled,
+        ...(data.levels?.khaled || {})
+      },
+      online: {
+        ...defaults.levels.online,
+        ...(data.levels?.online || {})
+      },
 
       progress: {
         rating:
@@ -1173,6 +1244,7 @@ async function loadCloudProfile(user) {
   }
 
   updateProfileUI()
+  return true
 }
 async function saveCloudProfile() {
 
@@ -1357,11 +1429,173 @@ const PROFILE_KEY = 'damagame_profile_v1'
 
 let currentGameMoves = 0
 let currentGameRecorded = false
+let currentGameReview = null
 let trainingUndoSnapshots = []
 let trainingTurnStartSnapshot = null
 let trainingLastMoveExplanation = ''
 let pendingProfileSave =
   Promise.resolve()
+
+function captureGameReviewPosition(move = null) {
+  const reviewMove = move
+    ? {
+        color: move.color,
+        fromRow: Number(move.fromRow),
+        fromCol: Number(move.fromCol),
+        row: Number(move.row),
+        col: Number(move.col),
+        capture: Boolean(move.capture),
+        capturedRow: move.capturedRow == null ? null : Number(move.capturedRow),
+        capturedCol: move.capturedCol == null ? null : Number(move.capturedCol),
+        continueCapture: Boolean(move.continueCapture)
+      }
+    : null
+
+  return {
+    move: reviewMove,
+    turn: currentTurn,
+    pieces: Array.from(
+      document.querySelectorAll('.checker-piece')
+    ).map(piece => ({
+      row: Number(piece.parentElement.dataset.row),
+      col: Number(piece.parentElement.dataset.col),
+      color: piece.dataset.color,
+      king: piece.dataset.king === 'true'
+    }))
+  }
+}
+
+function resetGameReview() {
+  currentGameReview = {
+    positions: [captureGameReviewPosition()]
+  }
+}
+
+function recordGameReviewMove(move) {
+  if (!currentGameReview) resetGameReview()
+  currentGameReview.positions.push(
+    captureGameReviewPosition(move)
+  )
+}
+
+function paintGameReviewPosition(board, position) {
+  board.replaceChildren()
+
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const square = document.createElement('div')
+      square.className = `square ${(row + col) % 2 ? 'dark-square' : 'light-square'}`
+      square.dataset.row = row
+      square.dataset.col = col
+
+      const state = position.pieces.find(
+        piece => piece.row === row && piece.col === col
+      )
+      if (state) {
+        const piece = createPiece(state.color)
+        if (state.king) {
+          piece.dataset.king = 'true'
+          piece.classList.add('king')
+          const symbol = document.createElement('span')
+          symbol.className = 'king-symbol'
+          symbol.textContent = '♛'
+          piece.append(symbol)
+        }
+        square.append(piece)
+      }
+
+      board.append(square)
+    }
+  }
+
+  if (currentLevel === 'online' && onlinePlayerColor === 'black') {
+    Array.from(board.children)
+      .reverse()
+      .forEach(square => board.append(square))
+  }
+}
+
+function renderGameReviewPosition(overlay, index) {
+  const positions = currentGameReview?.positions || []
+  if (!positions.length) return
+
+  const safeIndex = Math.max(0, Math.min(index, positions.length - 1))
+  const position = positions[safeIndex]
+  const board = overlay.querySelector('#reviewBoard')
+  if (!board) return
+
+  paintGameReviewPosition(board, position)
+  overlay.querySelector('#reviewMoveCount').textContent =
+    `${safeIndex} / ${positions.length - 1}`
+  overlay.querySelector('#reviewMoveDescription').textContent =
+    safeIndex === 0
+      ? 'بداية المباراة'
+      : describeGameReviewMove(position.move, safeIndex)
+  overlay.querySelector('#reviewStartBtn').disabled = safeIndex === 0
+  overlay.querySelector('#reviewPrevBtn').disabled = safeIndex === 0
+  overlay.querySelector('#reviewNextBtn').disabled = safeIndex === positions.length - 1
+  overlay.querySelector('#reviewEndBtn').disabled = safeIndex === positions.length - 1
+  overlay.dataset.position = safeIndex
+}
+
+function describeGameReviewMove(move, index) {
+  if (!move) return `النقلة ${index}`
+  const color = move.color === 'cream' ? 'الحليبي' : 'الأسود'
+  const from = `${Number(move.fromRow) + 1},${Number(move.fromCol) + 1}`
+  const to = `${Number(move.row) + 1},${Number(move.col) + 1}`
+  const action = move.capture ? 'أكل' : 'نقل'
+  const continuation = move.continueCapture ? ' • يتبعها أكل متصل' : ''
+  return `${color}: ${action} من ${from} إلى ${to}${continuation}`
+}
+
+function openGameReview() {
+  const positions = currentGameReview?.positions || []
+  if (positions.length < 2) return
+
+  document.querySelector('.game-review-overlay')?.remove()
+  const overlay = document.createElement('div')
+  overlay.className = 'game-review-overlay'
+  overlay.innerHTML = `
+    <section class="game-review-panel" role="dialog" aria-modal="true" aria-labelledby="gameReviewTitle">
+      <header class="game-review-header">
+        <div>
+          <small>إعادة المباراة</small>
+          <h2 id="gameReviewTitle">مراجعة المباراة</h2>
+        </div>
+        <button id="closeGameReviewBtn" class="game-review-close" type="button" aria-label="إغلاق المراجعة">×</button>
+      </header>
+      <p id="reviewMoveDescription" class="review-move-description"></p>
+      <div id="reviewBoard" class="board review-board" aria-label="لوح مراجعة المباراة"></div>
+      <footer class="game-review-controls">
+        <button id="reviewStartBtn" type="button" title="بداية المباراة" aria-label="بداية المباراة">|◀</button>
+        <button id="reviewPrevBtn" type="button" title="النقلة السابقة" aria-label="النقلة السابقة">◀</button>
+        <output id="reviewMoveCount" aria-live="polite"></output>
+        <button id="reviewNextBtn" type="button" title="النقلة التالية" aria-label="النقلة التالية">▶</button>
+        <button id="reviewEndBtn" type="button" title="نهاية المباراة" aria-label="نهاية المباراة">▶|</button>
+      </footer>
+    </section>
+  `
+  document.body.append(overlay)
+
+  let positionIndex = positions.length - 1
+  const navigate = offset => {
+    positionIndex += offset
+    renderGameReviewPosition(overlay, positionIndex)
+  }
+
+  overlay.querySelector('#closeGameReviewBtn').onclick = () => overlay.remove()
+  overlay.querySelector('#reviewStartBtn').onclick = () => {
+    positionIndex = 0
+    renderGameReviewPosition(overlay, positionIndex)
+  }
+  overlay.querySelector('#reviewPrevBtn').onclick = () => navigate(-1)
+  overlay.querySelector('#reviewNextBtn').onclick = () => navigate(1)
+  overlay.querySelector('#reviewEndBtn').onclick = () => {
+    positionIndex = positions.length - 1
+    renderGameReviewPosition(overlay, positionIndex)
+  }
+  renderGameReviewPosition(overlay, positionIndex)
+}
 
 // ========================================
 // ♛ نظام التصنيف بالنقاط - أونلاين فقط
@@ -1649,37 +1883,49 @@ function createDefaultProfile() {
       easy: {
         played: 0,
         wins: 0,
-        losses: 0
+        losses: 0,
+        winStreak: 0,
+        bestWinStreak: 0
       },
 
       medium: {
         played: 0,
         wins: 0,
-        losses: 0
+        losses: 0,
+        winStreak: 0,
+        bestWinStreak: 0
       },
 
       hard: {
         played: 0,
         wins: 0,
-        losses: 0
+        losses: 0,
+        winStreak: 0,
+        bestWinStreak: 0
       },
 
       impossible: {
   played: 0,
   wins: 0,
-  losses: 0
+        losses: 0,
+        winStreak: 0,
+        bestWinStreak: 0
 },
 
 khaled: {
   played: 0,
   wins: 0,
-  losses: 0
+  losses: 0,
+  winStreak: 0,
+  bestWinStreak: 0
 },
 
 online: {
   played: 0,
   wins: 0,
-  losses: 0
+  losses: 0,
+  winStreak: 0,
+  bestWinStreak: 0
 },
 
 progress: {
@@ -1853,9 +2099,15 @@ function recordGameResult(
     playerProfile.levels[level] = {
       played: 0,
       wins: 0,
-      losses: 0
+      losses: 0,
+      winStreak: 0,
+      bestWinStreak: 0
     }
   }
+
+  const levelStats = playerProfile.levels[level]
+  levelStats.winStreak = Number(levelStats.winStreak) || 0
+  levelStats.bestWinStreak = Number(levelStats.bestWinStreak) || 0
 
   playerProfile.games++
   playerProfile.totalMoves +=
@@ -1867,18 +2119,18 @@ function recordGameResult(
 
   if (playerWon) {
     playerProfile.wins++
-
-    playerProfile
-      .levels[level]
-      .wins++
+    levelStats.wins++
+    levelStats.winStreak++
+    levelStats.bestWinStreak = Math.max(
+      levelStats.bestWinStreak,
+      levelStats.winStreak
+    )
   }
 
   else {
     playerProfile.losses++
-
-    playerProfile
-      .levels[level]
-      .losses++
+    levelStats.losses++
+    levelStats.winStreak = 0
   }
 
   // التصنيف يتحرك في الأونلاين فقط.
@@ -1924,10 +2176,7 @@ function recordGameResult(
     forfeited,
 
     date:
-      new Date()
-        .toLocaleString(
-          'ar-SA'
-        )
+      new Date().toISOString()
   })
 
   // نحفظ آخر 20 مباراة فقط
@@ -2451,31 +2700,32 @@ function showHome() {
   document.querySelector('#app').innerHTML = `
     <main class="home">
 
-      <!-- زر الملف الشخصي -->
-      <button id="profileBtn" class="profile-top-btn">
-        <span
-          id="profileRankPiece"
-          class="rank-checker rank-checker-mini rank-beginner"
-          aria-hidden="true"
-        ></span>
-        <span id="profileButtonName">لاعب</span>
-        <span
-          id="profileLevelBadge"
-          class="player-level-badge"
-        >
-          400
-        </span>
-      </button>
+      <div class="home-account-actions">
+        <button id="profileBtn" class="profile-top-btn" type="button">
+          <span
+            id="profileRankPiece"
+            class="rank-checker rank-checker-mini rank-beginner"
+            aria-hidden="true"
+          ></span>
+          <span id="profileButtonName">لاعب</span>
+          <span
+            id="profileLevelBadge"
+            class="player-level-badge"
+          >
+            0
+          </span>
+        </button>
 
-      <button
-        id="friendsBtn"
-        class="friends-top-btn"
-        type="button"
-      >
-        <span aria-hidden="true">♙</span>
-        <span>الأصدقاء</span>
-        <span id="friendsOnlineCount" class="friends-online-count">0</span>
-      </button>
+        <button
+          id="friendsBtn"
+          class="friends-top-btn"
+          type="button"
+        >
+          <span aria-hidden="true">♙</span>
+          <span>الأصدقاء</span>
+          <span id="friendsOnlineCount" class="friends-online-count">0</span>
+        </button>
+      </div>
 
 
       <!-- ========================================
@@ -2542,12 +2792,32 @@ function showHome() {
                 لاعب
               </h2>
 
+              <button
+                id="editProfileNameBtn"
+                class="profile-name-edit-trigger"
+                type="button"
+                aria-label="تعديل الاسم"
+                title="تعديل الاسم"
+              >#</button>
+
               <span
                 id="profilePageLevelBadge"
                 class="player-level-badge profile-page-level-badge"
               >
                 مبتدئ • 400
               </span>
+            </div>
+
+            <div id="profileNameEditorPanel" class="profile-name-editor-panel" hidden>
+              <input
+                id="profileNameInput"
+                type="text"
+                maxlength="20"
+                placeholder="اكتب اسمك الجديد"
+                aria-label="الاسم الجديد"
+              >
+              <button id="saveProfileNameBtn" class="profile-save-btn" type="button">حفظ</button>
+              <p id="profileSaveMessage" class="profile-save-message" aria-live="polite"></p>
             </div>
 
             <p>
@@ -2592,6 +2862,8 @@ function showHome() {
 
   <!-- الزائر -->
   <div id="guestAccountView" class="guest-account-view">
+
+    <p id="accountSessionNotice" class="account-session-notice" hidden></p>
 
     <div class="account-welcome-card">
       <div class="account-welcome-icon">♛</div>
@@ -2823,7 +3095,13 @@ function showHome() {
     hidden
   >
 
-    <div class="account-signed-card">
+    <button
+      id="accountDetailsToggle"
+      class="account-signed-card"
+      type="button"
+      aria-expanded="false"
+      aria-controls="logoutAccountBtn"
+    >
 
       <div class="account-signed-avatar">
         ✓
@@ -2841,12 +3119,15 @@ function showHome() {
         </small>
       </div>
 
-    </div>
+      <span class="account-details-indicator" aria-hidden="true">⌄</span>
+
+    </button>
 
     <button
       id="logoutAccountBtn"
       class="logout-account-btn"
       type="button"
+      hidden
     >
       <span>تسجيل الخروج</span>
       <span>↗</span>
@@ -2855,40 +3136,6 @@ function showHome() {
   </div>
 
 </div>
-        <!-- تعديل الاسم -->
-
-        <div class="profile-section">
-
-          <h3>
-            الاسم
-          </h3>
-
-          <div class="profile-name-editor">
-
-            <input
-              id="profileNameInput"
-              type="text"
-              maxlength="20"
-              placeholder="اكتب اسمك"
-            >
-
-            <button
-              id="saveProfileNameBtn"
-              class="profile-save-btn"
-            >
-              حفظ الاسم
-            </button>
-
-          </div>
-
-          <p
-            id="profileSaveMessage"
-            class="profile-save-message"
-          ></p>
-
-        </div>
-
-
         <!-- الإحصائيات العامة -->
 
         <div class="profile-section">
@@ -2944,6 +3191,7 @@ function showHome() {
               <div class="level-stat-main">
                 <strong>سهل</strong>
                 <small id="easyPlayed">0 مباراة</small>
+                <small id="easyStreak" class="level-streak-badge" hidden></small>
               </div>
 
               <div class="level-results">
@@ -2956,6 +3204,7 @@ function showHome() {
               <div class="level-stat-main">
                 <strong>متوسط</strong>
                 <small id="mediumPlayed">0 مباراة</small>
+                <small id="mediumStreak" class="level-streak-badge" hidden></small>
               </div>
 
               <div class="level-results">
@@ -2968,6 +3217,7 @@ function showHome() {
               <div class="level-stat-main">
                 <strong>صعب</strong>
                 <small id="hardPlayed">0 مباراة</small>
+                <small id="hardStreak" class="level-streak-badge" hidden></small>
               </div>
 
               <div class="level-results">
@@ -2980,6 +3230,7 @@ function showHome() {
               <div class="level-stat-main">
                 <strong>☠️ أتحداك تفوز</strong>
                 <small id="impossiblePlayed">0 مباراة</small>
+                <small id="impossibleStreak" class="level-streak-badge" hidden></small>
               </div>
 
               <div class="level-results">
@@ -2992,6 +3243,7 @@ function showHome() {
               <div class="level-stat-main">
                 <strong>🛡️ خالد</strong>
                 <small id="khaledPlayed">0 مباراة</small>
+                <small id="khaledStreak" class="level-streak-badge" hidden></small>
               </div>
 
               <div class="level-results">
@@ -3008,6 +3260,7 @@ function showHome() {
                 <div>
                   <strong>أونلاين</strong>
                   <small id="onlinePlayed">0 مباراة</small>
+                  <small id="onlineStreak" class="level-streak-badge" hidden></small>
                 </div>
               </div>
 
@@ -3145,10 +3398,6 @@ function showHome() {
           id="leaderboardMain"
           class="leaderboard-main"
         >
-          <div class="leaderboard-note">
-            التصنيف يبدأ من 400 ويتغير بنتائج الأونلاين فقط
-          </div>
-
           <div
             id="leaderboardList"
             class="leaderboard-list"
@@ -3540,6 +3789,12 @@ function updateLevelProfileStats(
       `#${level}Losses`
     )
 
+  const streakBadge =
+    document.querySelector(`#${level}Streak`)
+
+  const currentStreak = Number(stats.winStreak) || 0
+  const bestStreak = Number(stats.bestWinStreak) || 0
+
   if (played) {
     played.textContent =
       `${stats.played} مباراة`
@@ -3554,6 +3809,55 @@ function updateLevelProfileStats(
     losses.textContent =
       `${stats.losses} خسارة`
   }
+
+  if (streakBadge) {
+    streakBadge.hidden = currentStreak < 3
+    streakBadge.textContent = currentStreak >= 3
+      ? `🔥 سلسلة ${currentStreak}`
+      : ''
+    streakBadge.title = bestStreak > 0
+      ? `أفضل سلسلة: ${bestStreak} انتصارات`
+      : ''
+  }
+}
+
+function formatGameHistoryDate(value) {
+  let date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    const arabicDigits = '٠١٢٣٤٥٦٧٨٩'
+    const normalized = String(value || '')
+      .replace(/[٠-٩]/g, digit => arabicDigits.indexOf(digit))
+      .replace(/[\u061c\u200e\u200f]/g, '')
+      .replace('،', ',')
+    const legacyDate = normalized.match(
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})\s*,?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*([صم])/u
+    )
+
+    if (legacyDate) {
+      const [, day, month, year, rawHour, minute, period] = legacyDate
+      const hour12 = Number(rawHour) % 12
+      const hour = period === 'م' ? hour12 + 12 : hour12
+      date = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        hour,
+        Number(minute)
+      )
+    }
+  }
+
+  if (Number.isNaN(date.getTime())) return String(value || '')
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(date).replace(',', '')
 }
 
 
@@ -3568,9 +3872,12 @@ function renderGameHistory() {
 
   historyBox.innerHTML = ''
 
-  if (
-    playerProfile.history.length === 0
-  ) {
+  const visibleHistory =
+    playerProfile.history.filter(game =>
+      ['online', 'impossible', 'khaled'].includes(game.level)
+    )
+
+  if (visibleHistory.length === 0) {
 
     const empty =
       document.createElement('p')
@@ -3579,7 +3886,7 @@ function renderGameHistory() {
       'empty-history'
 
     empty.textContent =
-      'ما لعبت أي مباراة إلى الآن.'
+      'لا توجد مباريات أونلاين أو في مستويي أتحداك تفوز وخالد بعد.'
 
     historyBox.appendChild(empty)
 
@@ -3587,7 +3894,7 @@ function renderGameHistory() {
   }
 
 
-  playerProfile.history
+  visibleHistory
     .forEach(game => {
 
       const item =
@@ -3629,12 +3936,20 @@ function renderGameHistory() {
         document.createElement('small')
 
       details.textContent =
-        `${game.moves} حركة • ${game.date}`
+        formatGameHistoryDate(game.date)
+
+      const moves =
+        document.createElement('span')
+
+      moves.className = 'history-moves'
+      moves.textContent = `${Number(game.moves) || 0} حركة`
+      moves.setAttribute('aria-label', `${Number(game.moves) || 0} حركة`)
 
 
       info.appendChild(level)
       info.appendChild(details)
 
+      item.appendChild(moves)
       item.appendChild(result)
       item.appendChild(info)
 
@@ -3646,6 +3961,7 @@ function renderGameHistory() {
 // ========================================
 
 let leaderboardPlayers = []
+let publicProfileHistoryRequestId = 0
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -3868,11 +4184,15 @@ function getPublicLevelStat(
     wins:
       Number(stats.wins) || 0,
     losses:
-      Number(stats.losses) || 0
+      Number(stats.losses) || 0,
+    winStreak:
+      Number(stats.winStreak) || 0,
+    bestWinStreak:
+      Number(stats.bestWinStreak) || 0
   }
 }
 
-function openPublicPlayerProfile(
+async function openPublicPlayerProfile(
   player
 ) {
   const main =
@@ -3886,6 +4206,14 @@ function openPublicPlayerProfile(
     )
 
   if (!main || !view) return
+
+  const requestId = ++publicProfileHistoryRequestId
+  const { data: recentHistory, error: historyError } =
+    await supabase.rpc('get_public_match_history', {
+      p_player_id: player.id
+    })
+
+  if (requestId !== publicProfileHistoryRequestId) return
 
   const ratingState =
     getPublicPlayerRatingState(
@@ -3930,6 +4258,12 @@ function openPublicPlayerProfile(
 
   main.hidden = true
   view.hidden = false
+  const leaderboardHeader =
+    document.querySelector('.leaderboard-page-header')
+
+  if (leaderboardHeader) {
+    leaderboardHeader.hidden = true
+  }
 
   view.innerHTML = `
     <button
@@ -3937,7 +4271,7 @@ function openPublicPlayerProfile(
       class="profile-back-btn public-profile-back-btn"
       type="button"
     >
-      ← لوحة الصدارة
+      ← رجوع للوحة الصدارة
     </button>
 
     <div class="public-profile-card">
@@ -4011,8 +4345,15 @@ function openPublicPlayerProfile(
         ${renderPublicLevelRow('🛡️ خالد', khaled)}
         ${renderPublicLevelRow('🌐 أونلاين', online)}
       </div>
+
+      <section class="public-profile-history">
+        <h3>آخر المباريات</h3>
+        <div id="publicPlayerHistory" class="public-history-list"></div>
+      </section>
     </div>
   `
+
+  renderPublicGameHistory(recentHistory, historyError)
 
   document
     .querySelector(
@@ -4021,11 +4362,62 @@ function openPublicPlayerProfile(
     ?.addEventListener(
       'click',
       () => {
+        publicProfileHistoryRequestId++
         view.hidden = true
         view.innerHTML = ''
         main.hidden = false
+        if (leaderboardHeader) {
+          leaderboardHeader.hidden = false
+        }
       }
     )
+}
+
+function renderPublicGameHistory(games, error) {
+  const historyBox = document.querySelector('#publicPlayerHistory')
+  if (!historyBox) return
+  historyBox.replaceChildren()
+
+  if (error) {
+    historyBox.append(createFriendEmptyState('تعذر تحميل سجل المباريات.'))
+    console.warn('تعذر تحميل سجل اللاعب العام:', error.message)
+    return
+  }
+
+  const recentGames = (games || []).filter(game =>
+    ['online', 'impossible', 'khaled'].includes(game.level)
+  )
+
+  if (recentGames.length === 0) {
+    historyBox.append(createFriendEmptyState('لا توجد مباريات مسجلة بعد.'))
+    return
+  }
+
+  recentGames.forEach(game => {
+    const item = document.createElement('div')
+    item.className = 'history-game-item'
+
+    const moves = document.createElement('span')
+    moves.className = 'history-moves'
+    moves.textContent = `${Number(game.moves) || 0} حركة`
+
+    const result = document.createElement('div')
+    result.className = game.result === 'win'
+      ? 'history-result history-win'
+      : 'history-result history-loss'
+    result.textContent = game.result === 'win' ? '✓ فوز' : '✕ خسارة'
+
+    const info = document.createElement('div')
+    info.className = 'history-game-info'
+    const level = document.createElement('strong')
+    level.textContent = getLevelName(game.level)
+    const date = document.createElement('small')
+    date.textContent = formatGameHistoryDate(game.date)
+    info.append(level, date)
+
+    item.append(moves, result, info)
+    historyBox.append(item)
+  })
 }
 
 function renderPublicLevelRow(
@@ -4039,6 +4431,7 @@ function renderPublicLevelRow(
         <small>
           ${stats.played} مباراة
         </small>
+        ${stats.winStreak >= 3 ? `<small class="public-level-streak">🔥 سلسلة ${stats.winStreak}</small>` : ''}
       </div>
 
       <div>
@@ -4080,7 +4473,11 @@ async function refreshAuthUI() {
   // نحافظ على الحساب بعد إغلاق الموقع أو الرجوع له
   // ولا نمسح الجلسة بسبب قراءة مؤقتة فارغة من المتصفح
   if (user) {
-    await loadCloudProfile(user)
+    const profileLoaded = await loadCloudProfile(user)
+    if (profileLoaded === false) {
+      await refreshAuthUI()
+      return
+    }
     startPresenceTracking()
   }
   else {
@@ -4104,6 +4501,14 @@ async function refreshAuthUI() {
   }
 
   if (user) {
+
+    const sessionNotice =
+      document.querySelector('#accountSessionNotice')
+
+    if (sessionNotice) {
+      sessionNotice.hidden = true
+      sessionNotice.textContent = ''
+    }
 
     guestView.hidden = true
 
@@ -4214,6 +4619,15 @@ function setupHomeEvents() {
     })
 
   document
+    .querySelector('#accountDetailsToggle')
+    .addEventListener('click', () => {
+      const logoutButton = document.querySelector('#logoutAccountBtn')
+      logoutButton.hidden = !logoutButton.hidden
+      document.querySelector('#accountDetailsToggle')
+        .setAttribute('aria-expanded', String(!logoutButton.hidden))
+    })
+
+  document
     .querySelector('#addFriendForm')
     .addEventListener('submit', sendFriendRequestFromForm)
 
@@ -4248,6 +4662,16 @@ function setupHomeEvents() {
         mainContent.hidden = false
       }
     )
+
+  document
+    .querySelector('#editProfileNameBtn')
+    .addEventListener('click', () => {
+      const editor = document.querySelector('#profileNameEditorPanel')
+      editor.hidden = !editor.hidden
+      if (!editor.hidden) {
+        document.querySelector('#profileNameInput').focus()
+      }
+    })
 
 
   // ========================================
@@ -4338,6 +4762,12 @@ function setupHomeEvents() {
           'تم حفظ الاسم ✓'
 
         updateProfileUI()
+
+        setTimeout(() => {
+          const editor = document.querySelector('#profileNameEditorPanel')
+          if (editor) editor.hidden = true
+          message.textContent = ''
+        }, 1400)
 
         setTimeout(() => {
 
@@ -5196,6 +5626,7 @@ function startOnlineGame() {
     ?.addEventListener('click', openRoomInviteView)
 
   createBoard()
+  resetGameReview()
 
   // كل لاعب يشوف قطعه من أسفل الرقعة بدون تدوير الرقعة نفسها.
   // صاحب الروم (الحليبي) يبقى بالاتجاه الطبيعي،
@@ -5534,6 +5965,19 @@ function moveSelectedPieceOnline(square) {
     }
   )
 
+  recordGameReviewMove({
+    color: onlinePlayerColor,
+    fromRow,
+    fromCol,
+    row,
+    col,
+    capture: captured,
+    capturedRow,
+    capturedCol,
+    continueCapture,
+    nextTurn
+  })
+
   if (continueCapture) {
     return
   }
@@ -5617,6 +6061,7 @@ function applyRemoteOnlineMove(move) {
   target.appendChild(piece)
   playMoveSound()
   promoteIfNeeded(piece)
+  recordGameReviewMove(move)
 
   clearSelection()
   mustContinueCapture = false
@@ -5655,28 +6100,28 @@ function showDifficulty() {
       <button class="difficulty-btn" data-level="easy">
         <span class="difficulty-title">سهل</span>
         <span class="difficulty-description">
-          مناسب لتعلم اللعبة
+          مناسب للمبتدئين
         </span>
       </button>
 
       <button class="difficulty-btn" data-level="medium">
         <span class="difficulty-title">متوسط</span>
         <span class="difficulty-description">
-          تحدي متوازن
+          تحدٍ متوازن
         </span>
       </button>
 
       <button class="difficulty-btn" data-level="hard">
         <span class="difficulty-title">صعب</span>
         <span class="difficulty-description">
-          خصم يفكر في خطواته
+          خصم قوي يخطط لكل نقلة
         </span>
       </button>
       <button class="difficulty-btn" data-level="impossible">
   <span class="difficulty-title">☠️ أتحداك تفوز</span>
 
   <span class="difficulty-description">
-    ذكاء خارق • يفكر بعمق شديد
+    يبحث بعمق عن أفضل نقلاته
   </span>
 </button>
 
@@ -5684,7 +6129,7 @@ function showDifficulty() {
   <span class="difficulty-title">🛡️ خالد</span>
 
   <span class="difficulty-description">
-    المتصدر الأعلى وفوق الجميع ويعلو الممالك
+    منافس قوي من أعلى المستويات
   </span>
 </button>
 
@@ -5782,11 +6227,16 @@ async function exitCurrentGameAsLoss() {
   }
 
   // ضد الذكاء: الخروج يحتسب خسارة في الإحصائيات فقط.
+  const elapsedMatchMs = matchTimerStartedAt
+    ? matchTimerElapsedMs + performance.now() - matchTimerStartedAt
+    : matchTimerElapsedMs
+
   const shouldRecordLoss =
     !gameOver &&
     !currentGameRecorded &&
     currentLevel &&
-    currentLevel !== 'training'
+    currentLevel !== 'training' &&
+    elapsedMatchMs >= 60000
 
   if (shouldRecordLoss) {
 
@@ -5940,6 +6390,7 @@ currentGameRecorded = false
   `
 
   createBoard()
+  resetGameReview()
   startMatchTimer()
 
   if (level === 'training') {
@@ -6627,6 +7078,16 @@ playMoveSound()
   promoteIfNeeded(
     selectedPiece
   )
+  recordGameReviewMove({
+    color: 'cream',
+    fromRow: trainingFromRow,
+    fromCol: trainingFromCol,
+    row: trainingToRow,
+    col: trainingToCol,
+    capture: captured,
+    capturedRow: captured ? Number(square.dataset.capturedRow) : null,
+    capturedCol: captured ? Number(square.dataset.capturedCol) : null
+  })
 
   const isKingNow =
     selectedPiece.dataset.king === 'true'
@@ -7571,6 +8032,16 @@ function executeImpossibleTurn(
 
   // ترقية إذا وصل للنهاية
   promoteIfNeeded(piece)
+  recordGameReviewMove({
+    color: 'black',
+    fromRow: step.fromRow,
+    fromCol: step.fromCol,
+    row: step.row,
+    col: step.col,
+    capture: step.capture,
+    capturedRow: step.capturedRow,
+    capturedCol: step.capturedCol
+  })
 
   const isKingNow =
     piece.dataset.king === 'true'
@@ -10900,6 +11371,16 @@ function executeComputerMove(move) {
     // ========================================
 
     promoteIfNeeded(piece)
+    recordGameReviewMove({
+      color: 'black',
+      fromRow: trainingFromRow,
+      fromCol: trainingFromCol,
+      row: trainingToRow,
+      col: trainingToCol,
+      capture: move.capture,
+      capturedRow: move.capturedRow,
+      capturedCol: move.capturedCol
+    })
 
     const isKingNow =
       piece.dataset.king === 'true'
@@ -11404,7 +11885,7 @@ function finishGame(message) {
 
   title.textContent = playerWon
     ? '👑 مبروك الانتصار!'
-    : '💀 خسرت يا حمار 😂'
+    : '💔 لم يحالفك الحظ هذه المرة'
 
   const resultMessage =
     document.createElement('p')
@@ -11427,8 +11908,8 @@ function finishGame(message) {
 
   else {
     resultMessage.textContent = playerWon
-      ? 'فزت عليك'
-      :'هطفهههه'
+      ? 'أحسنت، فزت بالمباراة.'
+      : 'لم يحالفك الحظ هذه المرة.'
   }
 
   const chance =
@@ -11460,6 +11941,14 @@ function finishGame(message) {
 
   buttons.className =
     'result-buttons'
+
+  if ((currentGameReview?.positions.length || 0) > 1) {
+    const reviewButton = document.createElement('button')
+    reviewButton.className = 'result-btn review-btn'
+    reviewButton.textContent = 'مراجعة المباراة'
+    reviewButton.onclick = openGameReview
+    buttons.appendChild(reviewButton)
+  }
 
   const replayButton =
     document.createElement('button')
