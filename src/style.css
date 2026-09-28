@@ -1,4 +1,51 @@
-@import url('https://fonts.googleapis.com/css2?family=Lalezar&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lalezar&family=Tajawal:wght@400;500;700;800;900&display=swap');
+
+/* =========================
+   نظام تصميم موحّد (خطوط / مسافات / زوايا / ظلال)
+   يُستخدم عبر كل عناصر الواجهة لضمان التناسق على شاشات iPhone
+========================= */
+
+:root {
+  color-scheme: dark;
+
+  --font-arabic: "Tajawal", "Segoe UI", Tahoma, Arial, sans-serif;
+
+  /* نظام أحجام الخطوط */
+  --fs-xs: clamp(10.5px, 2.6vw, 12px);
+  --fs-sm: clamp(12px, 3vw, 13px);
+  --fs-base: clamp(13px, 3.6vw, 15px);
+  --fs-md: clamp(15px, 4vw, 17px);
+  --fs-lg: clamp(17px, 4.6vw, 20px);
+  --fs-xl: clamp(21px, 6vw, 27px);
+  --fs-2xl: clamp(28px, 9vw, 42px);
+
+  /* نظام المسافات */
+  --sp-1: 6px;
+  --sp-2: 10px;
+  --sp-3: 14px;
+  --sp-4: 18px;
+  --sp-5: 24px;
+
+  /* نظام الزوايا */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  /* الظلال */
+  --shadow-sm: 0 6px 16px rgba(0, 0, 0, .28);
+  --shadow-md: 0 10px 24px rgba(0, 0, 0, .34);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, .6);
+
+  /* ارتفاع/عرض موحّد للأزرار الرئيسية */
+  --btn-height: 56px;
+
+  /* مساحات iPhone الآمنة (Dynamic Island / Home Indicator) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
 
 /* =========================
    إعدادات عامة
@@ -6,18 +53,33 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  direction: rtl;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
 
   font-family:
-    Arial,
-    sans-serif;
+    var(--font-arabic);
+
+  font-size: var(--fs-base);
 
   background: #0d0d0d;
 
   color: #f3e9d2;
+
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -31,6 +93,7 @@ button {
 
 .home {
   min-height: 100vh;
+  min-height: 100dvh;
 
   display: flex;
   flex-direction: column;
@@ -40,7 +103,11 @@ button {
 
   text-align: center;
 
-  padding: 20px;
+  padding:
+    max(20px, var(--safe-top))
+    max(20px, var(--safe-right))
+    max(20px, var(--safe-bottom))
+    max(20px, var(--safe-left));
 }
 
 
@@ -132,7 +199,7 @@ button {
 ========================= */
 
 h1 {
-  font-size: 58px;
+  font-size: var(--fs-2xl);
 
   margin:
     0 0 8px;
@@ -148,7 +215,7 @@ h1 {
   margin:
     0 0 38px;
 
-  font-size: 16px;
+  font-size: var(--fs-base);
 }
 
 
@@ -171,13 +238,14 @@ h1 {
 }
 
 button {
-  padding: 17px;
+  padding: var(--sp-3) var(--sp-4);
 
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 
-  font-size: 18px;
+  font-family: var(--font-arabic);
+  font-size: var(--fs-md);
 
-  font-weight: bold;
+  font-weight: 700;
 
   cursor: pointer;
 
@@ -186,6 +254,8 @@ button {
 }
 
 .primary-btn {
+  min-height: var(--btn-height);
+
   background: #f3e9d2;
 
   color: #111111;
@@ -204,6 +274,8 @@ button {
 }
 
 .secondary-btn {
+  min-height: var(--btn-height);
+
   background: #171717;
 
   color: #f3e9d2;
@@ -258,7 +330,11 @@ button {
   transition:
     0.2s ease;
 
-  padding: 20px;
+  padding:
+    max(20px, var(--safe-top))
+    max(20px, var(--safe-right))
+    max(20px, var(--safe-bottom))
+    max(20px, var(--safe-left));
 
   z-index: 100;
 }
@@ -281,10 +357,10 @@ button {
   border:
     1px solid #35322d;
 
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
 
   padding:
-    35px 28px 28px;
+    var(--sp-5) var(--sp-4) var(--sp-4);
 
   text-align: center;
 
@@ -296,7 +372,7 @@ button {
 .modal-box h2 {
   color: #f3e9d2;
 
-  font-size: 28px;
+  font-size: var(--fs-xl);
 
   margin:
     0 0 8px;
@@ -304,6 +380,8 @@ button {
 
 .modal-description {
   color: #8f8a80;
+
+  font-size: var(--fs-sm);
 
   margin:
     0 0 25px;
@@ -360,7 +438,7 @@ button {
 
   align-items: center;
 
-  gap: 18px;
+  gap: var(--sp-4);
 
   text-align: right;
 
@@ -371,9 +449,9 @@ button {
 
   color: #f3e9d2;
 
-  padding: 18px;
+  padding: var(--sp-4);
 
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 
   transition:
     0.2s ease;
@@ -403,9 +481,9 @@ button {
 
   color: #111;
 
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 
-  font-size: 24px;
+  font-size: var(--fs-xl);
 }
 
 .option-text {
@@ -417,7 +495,9 @@ button {
 }
 
 .option-text strong {
-  font-size: 17px;
+  font-size: var(--fs-md);
+
+  font-weight: 800;
 
   margin-bottom: 5px;
 }
@@ -425,7 +505,7 @@ button {
 .option-text small {
   color: #8f8a80;
 
-  font-size: 12px;
+  font-size: var(--fs-sm);
 
   line-height: 1.5;
 }
@@ -446,14 +526,18 @@ button {
 .difficulty-btn {
   width: 100%;
 
+  min-height: var(--btn-height);
+
   padding:
-    18px 20px;
+    var(--sp-4) var(--sp-5);
 
   display: flex;
 
   flex-direction: column;
 
   align-items: flex-start;
+
+  justify-content: center;
 
   background: #1c1c1c;
 
@@ -462,7 +546,7 @@ button {
   border:
     1px solid #33312c;
 
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 
   text-align: right;
 
@@ -482,9 +566,9 @@ button {
 .difficulty-title {
   width: 100%;
 
-  font-size: 18px;
+  font-size: var(--fs-md);
 
-  font-weight: bold;
+  font-weight: 800;
 
   text-align: right;
 
@@ -496,7 +580,7 @@ button {
 
   color: #8f8a80;
 
-  font-size: 12px;
+  font-size: var(--fs-sm);
 
   text-align: right;
 }
@@ -534,6 +618,7 @@ button {
 
 .game-page {
   min-height: 100vh;
+  min-height: 100dvh;
 
   display: flex;
 
@@ -542,7 +627,10 @@ button {
   align-items: center;
 
   padding:
-    30px 20px 50px;
+    max(30px, calc(var(--safe-top) + 12px))
+    max(20px, var(--safe-right))
+    max(50px, calc(var(--safe-bottom) + 24px))
+    max(20px, var(--safe-left));
 
   background: #0d0d0d;
 }
@@ -571,7 +659,7 @@ button {
 
   color: #f3e9d2;
 
-  font-size: 25px;
+  font-size: var(--fs-xl);
 }
 
 .game-info p {
@@ -580,10 +668,12 @@ button {
 
   color: #77736b;
 
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 
 .exit-game-btn {
+  min-height: 44px;
+
   background: rgba(255, 255, 255, 0.04);
 
   color: #cfc8ba;
@@ -591,12 +681,12 @@ button {
   border:
     1px solid rgba(255, 255, 255, 0.09);
 
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 
   padding:
-    10px 20px;
+    var(--sp-2) var(--sp-4);
 
-  font-size: 14px;
+  font-size: var(--fs-sm);
 
   font-weight: 700;
 
@@ -784,7 +874,6 @@ button {
     transform: scale(1.02);
     outline: 2px solid white;
     outline-offset: 3px;
-    border-radius: 50%;
     box-shadow: none !important;
 }
 
@@ -792,7 +881,6 @@ button {
     transform: scale(1.02);
     outline: 2px solid white;
     outline-offset: 3px;
-    border-radius: 50%;
     box-shadow: none !important;
 }
 
@@ -2351,8 +2439,8 @@ transform: none;
 .friends-top-btn {
   position: fixed;
   z-index: 60;
-  top: 18px;
-  left: 18px;
+  top: max(18px, calc(var(--safe-top) + 10px));
+  left: max(18px, var(--safe-left));
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -2751,7 +2839,11 @@ transform: none;
   align-items: start;
   justify-items: center;
   overflow-y: auto;
-  padding: 24px 12px;
+  padding:
+    max(24px, calc(var(--safe-top) + 12px))
+    max(12px, var(--safe-right))
+    max(24px, calc(var(--safe-bottom) + 12px))
+    max(12px, var(--safe-left));
   background: rgba(13,14,13,.97);
 }
 
@@ -2831,8 +2923,8 @@ transform: none;
 .game-invite-notice {
   position: fixed;
   z-index: 1200;
-  right: 18px;
-  bottom: 18px;
+  right: max(18px, calc(var(--safe-right) + 10px));
+  bottom: max(18px, calc(var(--safe-bottom) + 10px));
   width: min(360px, calc(100vw - 36px));
   padding: 16px;
   border: 1px solid rgba(243,233,210,.2);
@@ -3926,7 +4018,11 @@ transform: none;
   align-items: center;
   justify-content: center;
 
-  padding: 20px;
+  padding:
+    max(20px, var(--safe-top))
+    max(20px, var(--safe-right))
+    max(20px, var(--safe-bottom))
+    max(20px, var(--safe-left));
 
   background:
     rgba(5, 4, 3, 0.82);
@@ -4346,7 +4442,6 @@ transform: none;
   /* نخلي الرقعة طبقة واحدة بدل إعادة رسم الصفحة كلها */
   .board {
     contain: layout paint;
-    transform: translateZ(0);
   }
 
   /* drop-shadow على كل حجر كان مكلف على بعض الجوالات */
@@ -4354,7 +4449,7 @@ transform: none;
     filter: none !important;
 
     transition:
-      transform 0.1s ease-out !important;
+      transform 0.42s cubic-bezier(.22,.61,.36,1) !important;
 
     will-change: auto;
 
@@ -4680,11 +4775,6 @@ transform: none;
 }
 
 @media (max-width: 650px) {
-  .board.board-flipped,
-  .board.board-black-view {
-    transform: translateZ(0) !important;
-  }
-
   .game-page {
     background:
       radial-gradient(
@@ -5150,6 +5240,14 @@ transform: none;
   border-radius:18px !important;
 }
 
+.shop-action-btn {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  border-radius:18px !important;
+}
+
 
 /* لعبة جديدة / اختيار اللعب */
 #gameModal .modal-box {
@@ -5417,6 +5515,10 @@ button {
   border: 1px solid rgba(243,233,210,.18);
 }
 
+#shopBtn {
+  border: 1px solid rgba(243,233,210,.18);
+}
+
 .home-action-btn:hover {
   transform: translateY(-1px);
 }
@@ -5523,9 +5625,9 @@ button {
 }
 
 .profile-big-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  width: 78px;
+  height: 78px;
+  border-radius: 20px;
   font-size: 26px;
 }
 
@@ -5852,9 +5954,9 @@ button {
   }
 
   .profile-big-avatar {
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
     font-size: 22px;
   }
 
@@ -6032,7 +6134,8 @@ button:focus-visible {
 
 #newGameBtn,
 #trainingHomeBtn,
-#leaderboardBtn {
+#leaderboardBtn,
+#shopBtn {
   min-height: 62px;
   border: 4px solid #111311 !important;
   border-radius: 16px !important;
@@ -6049,13 +6152,15 @@ button:focus-visible {
 }
 
 #trainingHomeBtn,
-#leaderboardBtn {
+#leaderboardBtn,
+#shopBtn {
   background: linear-gradient(145deg, #30322e, #1a1c19);
 }
 
 #newGameBtn:hover,
 #trainingHomeBtn:hover,
-#leaderboardBtn:hover {
+#leaderboardBtn:hover,
+#shopBtn:hover {
   filter: brightness(1.1);
   box-shadow:
     0 0 0 2px rgba(243,233,210,.26),
@@ -6066,8 +6171,8 @@ button:focus-visible {
 .home-account-actions {
   position: fixed !important;
   z-index: 60;
-  top: 14px;
-  right: 14px;
+  top: max(14px, calc(var(--safe-top) + 8px));
+  right: max(14px, var(--safe-right));
   left: auto;
   width: min(190px, calc(100vw - 28px));
   display: grid;
@@ -6312,7 +6417,11 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   overflow-y: auto;
-  padding: 14px;
+  padding:
+    max(14px, calc(var(--safe-top) + 6px))
+    max(14px, var(--safe-right))
+    max(14px, calc(var(--safe-bottom) + 6px))
+    max(14px, var(--safe-left));
   background: rgba(5,4,3,.88);
   backdrop-filter: blur(12px);
 }

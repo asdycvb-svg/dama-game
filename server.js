@@ -58,14 +58,20 @@ function generateRoomCode() {
 
 function getPlayerColor(room, socketId) {
   if (room.host === socketId) {
-    return 'cream'
+    return room.hostColor
   }
 
   if (room.guest === socketId) {
-    return 'black'
+    return room.hostColor === 'cream' ? 'black' : 'cream'
   }
 
   return null
+}
+
+
+// اختيار عشوائي فعلي 50/50 للون منشئ الروم، لا يعتمد على ترتيب الدخول.
+function pickRandomHostColor() {
+  return Math.random() < 0.5 ? 'cream' : 'black'
 }
 
 
@@ -264,12 +270,14 @@ io.on(
         const roomSettings =
           normalizeRoomSettings(settings)
         const watchKey = randomBytes(24).toString('hex')
+        const hostColor = pickRandomHostColor()
 
         rooms.set(
           code,
           {
             host: socket.id,
             hostName: normalizePlayerName(settings?.playerName),
+            hostColor,
             watchKey,
             moveHistory: [],
             guest: null,
@@ -289,14 +297,13 @@ io.on(
         socket.join(code)
 
         socket.data.roomCode = code
-        socket.data.playerColor =
-          'cream'
+        socket.data.playerColor = hostColor
 
         if (typeof callback === "function") {
   callback({
     success: true,
     code,
-    color: "cream",
+    color: hostColor,
     settings: rooms.get(code)?.settings,
     watchKey
   });
@@ -368,6 +375,8 @@ io.on(
 
         closeRoomForSocket(socket)
 
+        const guestColor = room.hostColor === 'cream' ? 'black' : 'cream'
+
         room.guest = socket.id
         room.guestName = playerName
         room.turn = 'cream'
@@ -375,14 +384,13 @@ io.on(
         socket.join(code)
 
         socket.data.roomCode = code
-        socket.data.playerColor =
-          'black'
+        socket.data.playerColor = guestColor
 
 if (typeof callback === "function") {
   callback({
     success: true,
     code: code,
-    color: 'black',
+    color: guestColor,
     settings: room.settings,
     opponentName: room.hostName,
     watchKey: room.watchKey

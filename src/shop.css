@@ -1,0 +1,418 @@
+/* ============================================================
+   المتجر — متغيرات أشكال اللوحة وأشكال القطع
+   القيم الافتراضية هنا = نفس الشكل الكلاسيكي الحالي بالضبط،
+   بحيث لا يتغيّر أي شيء بصريًا قبل أن يختار اللاعب من المتجر.
+   ============================================================ */
+
+:root {
+  --board-light-bg:
+    repeating-linear-gradient(8deg, rgba(120, 82, 40, .06) 0px, rgba(120, 82, 40, .06) 1px, transparent 1px, transparent 10px),
+    linear-gradient(135deg, #e6bd80, #d3a161 55%, #bd8a4a);
+  --board-dark-bg:
+    repeating-linear-gradient(8deg, rgba(0, 0, 0, .16) 0px, rgba(0, 0, 0, .16) 1px, transparent 1px, transparent 10px),
+    linear-gradient(135deg, #6b4527, #4a2e1a 55%, #331e11);
+  --board-accent: #d3a161;
+
+  --piece-radius: 50%;
+  --piece-clip: none;
+  --piece-ring: 0 0 0 0 rgba(0, 0, 0, 0);
+  --piece-edge: 0 0 0 0 rgba(0, 0, 0, 0);
+  --piece-gloss: none;
+  --piece-gloss-opacity: 0;
+  --king-shadow: none;
+
+  --cream-color-a: #f1e6cc;
+  --cream-color-b: #cdb885;
+  --cream-color-border: #a9843f;
+  --black-color-a: #3a3a3a;
+  --black-color-b: #050505;
+  --black-color-border: #5c5c5c;
+}
+
+/* تطبيق شكل اللوحة المختار على كل رقعة في الموقع (اللعب/التدريب/المراجعة) */
+.light-square {
+  background: var(--board-light-bg) !important;
+}
+
+.dark-square {
+  background: var(--board-dark-bg) !important;
+}
+
+/* خط رفيع حول كل خانة يغطي أي فجوة شعرة تنتج عن تقريب البكسل في شبكة CSS Grid،
+   ويعطي حواف الرقعة وضوحًا أعلى في كل الأنماط. */
+.square {
+  outline: 1px solid rgba(12, 8, 5, .38);
+  outline-offset: 0;
+}
+
+/* إطار الرقعة أبرز وأوضح على العين في كل الأشكال */
+.board {
+  border-width: 8px !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, .65),
+    0 0 0 2px rgba(243, 233, 210, .4),
+    inset 0 0 0 2px rgba(0, 0, 0, .5) !important;
+}
+
+/* تطبيق لون القطعة المختار — منفصل تمامًا عن اختيار الشكل */
+.cream-checker {
+  background:
+    radial-gradient(circle at 35% 30%, var(--cream-color-a), var(--cream-color-a) 45%, var(--cream-color-b) 100%) !important;
+  border-color: var(--cream-color-border) !important;
+}
+
+.black-checker {
+  background:
+    radial-gradient(circle at 35% 30%, var(--black-color-a), var(--black-color-a) 45%, var(--black-color-b) 100%) !important;
+  border-color: var(--black-color-border) !important;
+}
+
+/* تطبيق شكل القطعة المختار — بدون أي تغيير على الألوان الأساسية للاعبين */
+.checker-piece {
+  border-radius: var(--piece-radius);
+  clip-path: var(--piece-clip);
+  box-shadow:
+    var(--piece-ring),
+    inset 0 2px 3px rgba(255, 255, 255, .24),
+    inset 0 -3px 5px rgba(0, 0, 0, .26),
+    0 0 0 1px rgba(0, 0, 0, .32),
+    0 5px 10px rgba(0, 0, 0, .42),
+    var(--piece-edge) !important;
+}
+
+.checker-piece::after {
+  border-radius: inherit;
+}
+
+.checker-piece::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  clip-path: inherit;
+  background: var(--piece-gloss);
+  opacity: var(--piece-gloss-opacity);
+  /* blend بدل شفافية بسيطة، حتى يبقى شكل النقوش/اللمعان واضحًا فوق الألوان الفاتحة أيضًا */
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.king-symbol {
+  text-shadow: var(--king-shadow);
+}
+
+
+/* ============================================================
+   واجهة المتجر
+   ============================================================ */
+
+.shop-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2, 10px);
+  margin-bottom: var(--sp-3, 14px);
+}
+
+.shop-tab-btn {
+  min-height: 46px;
+  padding: var(--sp-2, 10px) var(--sp-3, 14px);
+  border: 1px solid rgba(243, 233, 210, .16);
+  border-radius: var(--radius-md, 14px);
+  background: rgba(255, 255, 255, .04);
+  color: rgba(243, 233, 210, .7);
+  font-family: var(--font-arabic, inherit);
+  font-size: var(--fs-sm, 13px);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.shop-tab-btn.active {
+  background: linear-gradient(180deg, #f3e9d2, #dcc79c);
+  border-color: rgba(255, 255, 255, .3);
+  color: #171717;
+}
+
+.shop-tab-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2, 10px);
+  padding-bottom: var(--sp-3, 14px);
+}
+
+.shop-section-title {
+  margin: 0 0 var(--sp-2, 10px);
+  color: #f3e9d2;
+  font-size: var(--fs-sm, 13px);
+  font-weight: 800;
+}
+
+.shop-color-section {
+  margin-bottom: var(--sp-4, 18px);
+}
+
+.shop-color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: var(--sp-2, 10px);
+}
+
+.shop-color-swatch {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, .3);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .3),
+    inset 0 -2px 3px rgba(0, 0, 0, .25),
+    0 3px 8px rgba(0, 0, 0, .35);
+  cursor: pointer;
+}
+
+.shop-color-swatch.selected {
+  box-shadow:
+    0 0 0 3px rgba(243, 233, 210, .9),
+    inset 0 1px 0 rgba(255, 255, 255, .3),
+    inset 0 -2px 3px rgba(0, 0, 0, .25);
+}
+
+.shop-color-swatch.selected::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #171717;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .6);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.shop-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1, 6px);
+  padding: var(--sp-2, 10px);
+  border: 1.5px solid rgba(255, 255, 255, .09);
+  border-radius: var(--radius-md, 14px);
+  background: rgba(255, 255, 255, .035);
+  color: #f3e9d2;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .18s ease, transform .18s ease, background .18s ease;
+}
+
+.shop-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(243, 233, 210, .3);
+}
+
+.shop-card.selected {
+  border-color: var(--board-accent, #d3a161);
+  background: rgba(243, 233, 210, .08);
+  box-shadow: 0 0 0 2px rgba(243, 233, 210, .18);
+}
+
+.shop-card-label {
+  font-size: var(--fs-xs, 11px);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.shop-card-check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f3e9d2;
+  color: #171717;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shop-card.selected .shop-card-check {
+  display: flex;
+}
+
+.shop-swatch {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  overflow: hidden;
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, .5);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+
+.shop-swatch-square.light {
+  background: var(--board-light-bg);
+}
+
+.shop-swatch-square.dark {
+  background: var(--board-dark-bg);
+}
+
+.shop-swatch-piece {
+  position: absolute;
+  width: 30%;
+  height: 40%;
+  top: 30%;
+  border-radius: var(--piece-radius);
+  clip-path: var(--piece-clip);
+  box-shadow:
+    var(--piece-ring),
+    inset 0 2px 2px rgba(255, 255, 255, .18),
+    inset 0 -2px 3px rgba(0, 0, 0, .2),
+    0 3px 5px rgba(0, 0, 0, .4),
+    var(--piece-edge);
+}
+
+.shop-swatch-piece::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  clip-path: inherit;
+  background: var(--piece-gloss);
+  opacity: var(--piece-gloss-opacity);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.shop-swatch-piece.cream-checker {
+  right: 12%;
+  background: radial-gradient(circle at 35% 30%, var(--cream-color-a), var(--cream-color-a) 45%, var(--cream-color-b) 100%);
+  border: 2px solid var(--cream-color-border);
+}
+
+.shop-swatch-piece.black-checker {
+  left: 12%;
+  background: radial-gradient(circle at 35% 30%, var(--black-color-a), var(--black-color-a) 45%, var(--black-color-b) 100%);
+  border: 2px solid var(--black-color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shop-swatch-piece.black-checker .king-symbol {
+  position: relative;
+  font-size: 10px;
+  color: #f3e9d2;
+  text-shadow: var(--king-shadow);
+}
+
+/* زر معاينة صغير فوق التصميم — يظهر فقط عندما يكون هذا الشكل محدَّدًا */
+.shop-card-preview-btn {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, .32);
+  border-radius: 50%;
+  background: rgba(10, 8, 6, .62);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.shop-card.selected .shop-card-preview-btn {
+  display: flex;
+}
+
+@media (max-width: 420px) {
+  .shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .shop-card {
+    padding: 8px;
+  }
+}
+
+/* زر معاينة الشكل المختار — أعلى يمين شاشة المتجر */
+.shop-preview-overlay {
+  position: fixed;
+  z-index: 10500;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:
+    max(20px, var(--safe-top, 20px))
+    max(20px, var(--safe-right, 20px))
+    max(20px, var(--safe-bottom, 20px))
+    max(20px, var(--safe-left, 20px));
+  background: rgba(5, 4, 3, .88);
+  backdrop-filter: blur(10px);
+}
+
+.shop-preview-panel {
+  position: relative;
+  width: min(420px, 100%);
+  padding: var(--sp-5, 24px) var(--sp-4, 18px) var(--sp-4, 18px);
+  border: 1px solid rgba(243, 233, 210, .16);
+  border-radius: var(--radius-lg, 18px);
+  background: linear-gradient(160deg, #1b1916, #101010);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, .7);
+  text-align: center;
+}
+
+.shop-preview-title {
+  margin: 0 0 var(--sp-3, 14px);
+  color: #f3e9d2;
+  font-size: var(--fs-lg, 18px);
+  font-weight: 800;
+}
+
+.shop-preview-close {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #877f72;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.shop-preview-board {
+  width: min(340px, 78vw);
+  margin: 0 auto;
+}
+
+.shop-preview-board .king-symbol {
+  font-size: 13px !important;
+}

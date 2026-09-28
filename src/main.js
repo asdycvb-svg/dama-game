@@ -1,4 +1,5 @@
 import './style.css'
+import './shop.css'
 import { io } from 'socket.io-client'
 import { supabase } from './supabase.js'
 
@@ -164,6 +165,613 @@ function playMoveSound() {
 }
 
 // ========================================
+// 🛒 المتجر — أشكال اللوحة وأشكال القطع
+// (تصميم بصري فقط عبر CSS variables، لا يغيّر منطق اللعبة أو ألوان اللاعبين)
+// ========================================
+
+const NEUTRAL_SHADOW = '0 0 0 0 rgba(0,0,0,0)'
+
+const BOARD_SKINS = [
+  {
+    id: 'classic',
+    name: 'البلوط الكلاسيكي',
+    light: 'repeating-linear-gradient(8deg, rgba(120,82,40,.06) 0px, rgba(120,82,40,.06) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #e6bd80, #d3a161 55%, #bd8a4a)',
+    dark: 'repeating-linear-gradient(8deg, rgba(0,0,0,.16) 0px, rgba(0,0,0,.16) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #6b4527, #4a2e1a 55%, #331e11)',
+    accent: '#d3a161'
+  },
+  {
+    id: 'walnut-deep',
+    name: 'الجوز الغامق',
+    light: 'repeating-linear-gradient(8deg, rgba(80,50,20,.08) 0px, rgba(80,50,20,.08) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #c99a63, #a97a45 55%, #8a6236)',
+    dark: 'repeating-linear-gradient(8deg, rgba(0,0,0,.2) 0px, rgba(0,0,0,.2) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #3c2717, #241609 55%, #150c05)',
+    accent: '#a97a45'
+  },
+  {
+    id: 'mahogany',
+    name: 'خشب الماهوجني',
+    light: 'repeating-linear-gradient(10deg, rgba(90,30,20,.07) 0px, rgba(90,30,20,.07) 1px, transparent 1px, transparent 11px), linear-gradient(135deg, #d98a63, #b8613f 55%, #8f4126)',
+    dark: 'repeating-linear-gradient(10deg, rgba(0,0,0,.18) 0px, rgba(0,0,0,.18) 1px, transparent 1px, transparent 11px), linear-gradient(135deg, #4a1f15, #2e120b 55%, #1c0906)',
+    accent: '#b8613f'
+  },
+  {
+    id: 'maple-honey',
+    name: 'القيقب العسلي',
+    light: 'repeating-linear-gradient(6deg, rgba(150,110,50,.06) 0px, rgba(150,110,50,.06) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #f3dcae, #e2bd80 55%, #c89e5c)',
+    dark: 'repeating-linear-gradient(6deg, rgba(0,0,0,.14) 0px, rgba(0,0,0,.14) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #8a6a3d, #5f4726 55%, #3c2c18)',
+    accent: '#e2bd80'
+  },
+  {
+    id: 'ebony-noir',
+    name: 'الأبنوس الأسود',
+    light: 'linear-gradient(135deg, #5c5c5c, #3a3a3a 55%, #232323)',
+    dark: 'linear-gradient(135deg, #141414, #0a0a0a 55%, #000000)',
+    accent: '#8a8a8a'
+  },
+  {
+    id: 'cherrywood',
+    name: 'خشب الكرز',
+    light: 'repeating-linear-gradient(9deg, rgba(120,40,25,.07) 0px, rgba(120,40,25,.07) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #e2a58a, #c97656 55%, #a2543a)',
+    dark: 'repeating-linear-gradient(9deg, rgba(0,0,0,.18) 0px, rgba(0,0,0,.18) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #5a231a, #39130d 55%, #210a06)',
+    accent: '#c97656'
+  },
+  {
+    id: 'rosewood',
+    name: 'خشب الورد',
+    light: 'repeating-linear-gradient(7deg, rgba(90,40,60,.06) 0px, rgba(90,40,60,.06) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #caa08f, #a97462 55%, #835040)',
+    dark: 'repeating-linear-gradient(7deg, rgba(0,0,0,.2) 0px, rgba(0,0,0,.2) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #3f2029, #25121a 55%, #160a0f)',
+    accent: '#a97462'
+  },
+  {
+    id: 'teakwood',
+    name: 'خشب الساج',
+    light: 'repeating-linear-gradient(8deg, rgba(130,90,30,.07) 0px, rgba(130,90,30,.07) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #e8c27a, #cf9f4f 55%, #a97c34)',
+    dark: 'repeating-linear-gradient(8deg, rgba(0,0,0,.18) 0px, rgba(0,0,0,.18) 1px, transparent 1px, transparent 10px), linear-gradient(135deg, #5f4420, #3d2b13 55%, #241909)',
+    accent: '#cf9f4f'
+  },
+  {
+    id: 'marble-ivory',
+    name: 'الرخام العاجي',
+    light: 'radial-gradient(circle at 25% 20%, rgba(255,255,255,.55), transparent 42%), radial-gradient(circle at 75% 65%, rgba(0,0,0,.08), transparent 40%), linear-gradient(135deg, #efe9df, #d8d0c1 55%, #bdb2a0)',
+    dark: 'radial-gradient(circle at 65% 30%, rgba(255,255,255,.12), transparent 45%), linear-gradient(135deg, #8f877a, #6c6459 55%, #4a453d)',
+    accent: '#d8d0c1'
+  },
+  {
+    id: 'marble-onyx',
+    name: 'الرخام الأسود',
+    light: 'radial-gradient(circle at 30% 25%, rgba(255,255,255,.18), transparent 45%), linear-gradient(135deg, #5a5a5a, #3f3f3f 55%, #2a2a2a)',
+    dark: 'radial-gradient(circle at 70% 60%, rgba(255,255,255,.06), transparent 45%), linear-gradient(135deg, #161616, #0d0d0d 55%, #000000)',
+    accent: '#5a5a5a'
+  },
+  {
+    id: 'slate-stone',
+    name: 'الحجر الأردوازي',
+    light: 'linear-gradient(135deg, #9aa7ad, #78868c 55%, #5c6a70)',
+    dark: 'linear-gradient(135deg, #333d40, #20282a 55%, #121718)',
+    accent: '#78868c'
+  },
+  {
+    id: 'emerald-felt',
+    name: 'الجوخ الزمردي',
+    light: 'linear-gradient(135deg, #3f7a5e, #2c5c45 55%, #1c4231)',
+    dark: 'linear-gradient(135deg, #16352a, #0d2018 55%, #06120d)',
+    accent: '#2c5c45'
+  },
+  {
+    id: 'sapphire-night',
+    name: 'الياقوت الأزرق',
+    light: 'linear-gradient(135deg, #3d5a80, #2b4162 55%, #1d2c46)',
+    dark: 'linear-gradient(135deg, #101823, #080d14 55%, #030608)',
+    accent: '#2b4162'
+  },
+  {
+    id: 'crimson-royal',
+    name: 'الأحمر الملكي',
+    light: 'linear-gradient(135deg, #8a2c2c, #6c1f1f 55%, #4a1414)',
+    dark: 'linear-gradient(135deg, #2a0d0d, #1a0707 55%, #0d0303)',
+    accent: '#b8863a'
+  },
+  {
+    id: 'carbon-fiber',
+    name: 'ألياف الكربون',
+    light: 'repeating-linear-gradient(45deg, #313131 0px, #313131 3px, #262626 3px, #262626 6px)',
+    dark: 'repeating-linear-gradient(45deg, #151515 0px, #151515 3px, #0a0a0a 3px, #0a0a0a 6px)',
+    accent: '#4a4a4a'
+  },
+  {
+    id: 'gold-royal',
+    name: 'الذهب الملكي',
+    light: 'repeating-linear-gradient(8deg, rgba(160,120,30,.08) 0px, rgba(160,120,30,.08) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #f6e3a8, #e0c375 55%, #c2a04f)',
+    dark: 'linear-gradient(135deg, #7a5a20, #4f3812 55%, #2e2008)',
+    accent: '#e0c375'
+  },
+  {
+    id: 'ocean-teal',
+    name: 'الفيروزي المحيطي',
+    light: 'linear-gradient(135deg, #6fb8ac, #4c9384 55%, #336a5f)',
+    dark: 'linear-gradient(135deg, #163d38, #0c2622 55%, #051512)',
+    accent: '#4c9384'
+  },
+  {
+    id: 'desert-sand',
+    name: 'رمال الصحراء',
+    light: 'repeating-linear-gradient(6deg, rgba(150,110,50,.06) 0px, rgba(150,110,50,.06) 1px, transparent 1px, transparent 9px), linear-gradient(135deg, #e8d3a0, #d2b571 55%, #b5924c)',
+    dark: 'linear-gradient(135deg, #7a5c33, #523c1f 55%, #302311)',
+    accent: '#d2b571'
+  }
+]
+
+const PIECE_SKINS = [
+  {
+    id: 'classic',
+    name: 'كلاسيكي',
+    radius: '50%',
+    clip: 'none',
+    ring: NEUTRAL_SHADOW,
+    edge: NEUTRAL_SHADOW,
+    gloss: 'none',
+    glossOpacity: '0',
+    kingShadow: 'none'
+  },
+  {
+    id: 'beveled-ring',
+    name: 'حلقة مشطوفة',
+    ring: 'inset 0 0 0 3px rgba(255,255,255,.14), inset 0 0 0 5px rgba(0,0,0,.18)',
+    kingShadow: '0 1px 2px rgba(0,0,0,.5)'
+  },
+  {
+    id: 'deep-groove',
+    name: 'أخدود عميق',
+    ring: 'inset 0 0 0 2px rgba(0,0,0,.35), inset 0 0 0 5px rgba(255,255,255,.06)',
+    edge: '0 0 0 1px rgba(0,0,0,.4)'
+  },
+  {
+    id: 'glossy-dome',
+    name: 'قبة لامعة',
+    gloss: 'radial-gradient(circle at 35% 22%, rgba(255,255,255,.65), transparent 55%)',
+    glossOpacity: '0.9',
+    edge: '0 6px 10px rgba(0,0,0,.35)'
+  },
+  {
+    id: 'matte-stone',
+    name: 'حجر مطفي',
+    ring: 'inset 0 0 0 2px rgba(0,0,0,.12)',
+    edge: '0 2px 2px rgba(0,0,0,.5)'
+  },
+  {
+    id: 'studded-brass',
+    name: 'نحاس منقّط',
+    gloss: 'repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,.35) 0px, rgba(255,255,255,.35) 1px, transparent 1px, transparent 7px)',
+    glossOpacity: '0.5',
+    ring: 'inset 0 0 0 3px rgba(0,0,0,.2)'
+  },
+  {
+    id: 'engraved-rings',
+    name: 'حلقات محفورة',
+    gloss: 'repeating-radial-gradient(circle, rgba(255,255,255,.12) 0px 2px, transparent 2px 6px)',
+    glossOpacity: '0.6',
+    ring: 'inset 0 0 0 2px rgba(0,0,0,.25)'
+  },
+  {
+    id: 'hexagon-cut',
+    name: 'سداسي الشكل',
+    radius: '14%',
+    clip: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%)',
+    edge: '0 5px 8px rgba(0,0,0,.4)'
+  },
+  {
+    id: 'octagon-plate',
+    name: 'ثماني الشكل',
+    radius: '18%',
+    clip: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)'
+  },
+  {
+    id: 'diamond-facet',
+    name: 'ماسي متعدد الأوجه',
+    radius: '10%',
+    clip: 'polygon(50% 0%, 85% 25%, 100% 50%, 85% 75%, 50% 100%, 15% 75%, 0% 50%, 15% 25%)',
+    gloss: 'linear-gradient(135deg, rgba(255,255,255,.4), transparent 50%)',
+    glossOpacity: '0.8'
+  },
+  {
+    id: 'shield-emblem',
+    name: 'درع مزخرف',
+    gloss: 'radial-gradient(circle at 40% 25%, rgba(255,255,255,.5), transparent 60%)',
+    glossOpacity: '0.85',
+    ring: 'inset 0 0 0 3px rgba(255,255,255,.1), inset 0 0 0 6px rgba(0,0,0,.25)',
+    edge: '0 6px 12px rgba(0,0,0,.45)'
+  },
+  {
+    id: 'laurel-double',
+    name: 'حلقة مزدوجة',
+    ring: 'inset 0 0 0 2px rgba(0,0,0,.3), inset 0 0 0 4px rgba(255,255,255,.1), inset 0 0 0 6px rgba(0,0,0,.2)'
+  },
+  {
+    id: 'antique-brass',
+    name: 'نحاس عتيق',
+    gloss: 'radial-gradient(circle at 35% 25%, rgba(255,244,220,.4), transparent 55%)',
+    glossOpacity: '0.7',
+    ring: 'inset 0 0 0 3px rgba(120,90,40,.25)'
+  },
+  {
+    id: 'onyx-inlay',
+    name: 'ترصيع العقيق',
+    ring: 'inset 0 0 0 4px rgba(0,0,0,.4)',
+    edge: '0 3px 6px rgba(0,0,0,.5)'
+  },
+  {
+    id: 'crystal-cut',
+    name: 'قطع بلوري',
+    radius: '12%',
+    clip: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
+    gloss: 'linear-gradient(135deg, rgba(255,255,255,.5), transparent 45%)',
+    glossOpacity: '0.85'
+  },
+  {
+    id: 'carved-wood-ring',
+    name: 'نقش خشبي دائري',
+    gloss: 'repeating-radial-gradient(circle, rgba(0,0,0,.08) 0px 3px, transparent 3px 8px)',
+    glossOpacity: '0.55',
+    ring: 'inset 0 0 0 2px rgba(0,0,0,.2)'
+  },
+  {
+    id: 'war-medallion',
+    name: 'ميدالية حربية',
+    ring: 'inset 0 0 0 3px rgba(0,0,0,.3)',
+    gloss: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,.55) 0 8%, transparent 10%)',
+    glossOpacity: '0.8',
+    edge: '0 5px 9px rgba(0,0,0,.4)'
+  },
+  {
+    id: 'royal-crest',
+    name: 'شعار ملكي',
+    gloss: 'radial-gradient(circle at 35% 22%, rgba(255,255,255,.6), transparent 55%)',
+    glossOpacity: '0.9',
+    ring: 'inset 0 0 0 3px rgba(255,255,255,.15), inset 0 0 0 6px rgba(0,0,0,.3)',
+    edge: '0 8px 14px rgba(0,0,0,.5)',
+    kingShadow: '0 0 6px rgba(255,255,255,.6)'
+  }
+].map(skin => ({
+  radius: '50%',
+  clip: 'none',
+  ring: NEUTRAL_SHADOW,
+  edge: NEUTRAL_SHADOW,
+  gloss: 'none',
+  glossOpacity: '0',
+  kingShadow: 'none',
+  ...skin
+}))
+
+const DEFAULT_BOARD_SKIN = 'classic'
+const DEFAULT_PIECE_SKIN = 'classic'
+
+// ألوان مخصّصة لقطعتَي الحليبي والأسود — مستقلة تمامًا عن اختيار الشكل.
+const CREAM_COLOR_OPTIONS = [
+  { id: 'classic', name: 'الحليبي الكلاسيكي', a: '#f1e6cc', b: '#cdb885', border: '#a9843f' },
+  { id: 'ivory', name: 'العاجي', a: '#fdf6e3', b: '#e6d9a8', border: '#c7b168' },
+  { id: 'pearl', name: 'اللؤلؤي', a: '#ffffff', b: '#d6d9dd', border: '#a8adb5' },
+  { id: 'silver', name: 'الفضي', a: '#eef1f5', b: '#b7bec8', border: '#8b95a1' },
+  { id: 'gold', name: 'الذهبي', a: '#fbe9ac', b: '#caa23b', border: '#8a6a1e' },
+  { id: 'rose', name: 'الوردي', a: '#fbdde2', b: '#e2a3ad', border: '#c67885' },
+  { id: 'sky', name: 'السماوي', a: '#d8ecf7', b: '#8fc2dc', border: '#5f97b6' },
+  { id: 'mint', name: 'النعناعي', a: '#dcf3e6', b: '#93d2b0', border: '#5da77e' },
+  { id: 'lavender', name: 'البنفسجي الفاتح', a: '#e9e0fa', b: '#b79ce0', border: '#8a68c2' },
+  { id: 'coral', name: 'المرجاني', a: '#fbdac9', b: '#ec9a6c', border: '#cc7442' }
+]
+
+const BLACK_COLOR_OPTIONS = [
+  { id: 'classic', name: 'الأسود الكلاسيكي', a: '#3a3a3a', b: '#050505', border: '#5c5c5c' },
+  { id: 'charcoal', name: 'الفحمي', a: '#4d4d4a', b: '#15150f', border: '#6f6f68' },
+  { id: 'navy', name: 'الكحلي', a: '#28374e', b: '#080e17', border: '#4c6688' },
+  { id: 'maroon', name: 'العنّابي', a: '#5e232f', b: '#1c090d', border: '#8c3b4c' },
+  { id: 'forest', name: 'الأخضر الغامق', a: '#22422c', b: '#081209', border: '#3f7050' },
+  { id: 'purple', name: 'البنفسجي الغامق', a: '#3d2755', b: '#120a1c', border: '#63428a' },
+  { id: 'brown', name: 'البني', a: '#4d3520', b: '#180f07', border: '#73522f' },
+  { id: 'slate', name: 'الرمادي المزرق', a: '#3a444e', b: '#0f1316', border: '#5f6d78' },
+  { id: 'teal', name: 'الفيروزي الغامق', a: '#1f434b', b: '#061214', border: '#3c707c' },
+  { id: 'wine', name: 'النبيذي', a: '#4d1122', b: '#160408', border: '#7e2139' }
+]
+
+const DEFAULT_CREAM_COLOR = 'classic'
+const DEFAULT_BLACK_COLOR = 'classic'
+
+function findCreamColor(id) {
+  return CREAM_COLOR_OPTIONS.find(color => color.id === id) || CREAM_COLOR_OPTIONS[0]
+}
+
+function findBlackColor(id) {
+  return BLACK_COLOR_OPTIONS.find(color => color.id === id) || BLACK_COLOR_OPTIONS[0]
+}
+
+function findBoardSkin(id) {
+  return BOARD_SKINS.find(skin => skin.id === id) || BOARD_SKINS[0]
+}
+
+function findPieceSkin(id) {
+  return PIECE_SKINS.find(skin => skin.id === id) || PIECE_SKINS[0]
+}
+
+function loadStoredSkin(key, fallback) {
+  try {
+    return localStorage.getItem(key) || fallback
+  }
+  catch (error) {
+    return fallback
+  }
+}
+
+let activeBoardSkinId = loadStoredSkin('dama_board_skin', DEFAULT_BOARD_SKIN)
+let activePieceSkinId = loadStoredSkin('dama_piece_skin', DEFAULT_PIECE_SKIN)
+let activeCreamColorId = loadStoredSkin('dama_cream_color', DEFAULT_CREAM_COLOR)
+let activeBlackColorId = loadStoredSkin('dama_black_color', DEFAULT_BLACK_COLOR)
+
+function setSkinVariables(target, boardSkin, pieceSkin, creamColor = findCreamColor(activeCreamColorId), blackColor = findBlackColor(activeBlackColorId)) {
+  target.style.setProperty('--board-light-bg', boardSkin.light)
+  target.style.setProperty('--board-dark-bg', boardSkin.dark)
+  target.style.setProperty('--board-accent', boardSkin.accent)
+  target.style.setProperty('--piece-radius', pieceSkin.radius)
+  target.style.setProperty('--piece-clip', pieceSkin.clip)
+  target.style.setProperty('--piece-ring', pieceSkin.ring)
+  target.style.setProperty('--piece-edge', pieceSkin.edge)
+  target.style.setProperty('--piece-gloss', pieceSkin.gloss)
+  target.style.setProperty('--piece-gloss-opacity', pieceSkin.glossOpacity)
+  target.style.setProperty('--king-shadow', pieceSkin.kingShadow)
+  target.style.setProperty('--cream-color-a', creamColor.a)
+  target.style.setProperty('--cream-color-b', creamColor.b)
+  target.style.setProperty('--cream-color-border', creamColor.border)
+  target.style.setProperty('--black-color-a', blackColor.a)
+  target.style.setProperty('--black-color-b', blackColor.b)
+  target.style.setProperty('--black-color-border', blackColor.border)
+}
+
+function applyActiveSkins() {
+  setSkinVariables(
+    document.body,
+    findBoardSkin(activeBoardSkinId),
+    findPieceSkin(activePieceSkinId)
+  )
+}
+
+function setActiveBoardSkin(id) {
+  activeBoardSkinId = findBoardSkin(id).id
+  try {
+    localStorage.setItem('dama_board_skin', activeBoardSkinId)
+  }
+  catch (error) {
+    // التخزين المحلي قد لا يكون متاحًا، لا نوقف اللعبة بسبب هذا.
+  }
+  applyActiveSkins()
+}
+
+function setActivePieceSkin(id) {
+  activePieceSkinId = findPieceSkin(id).id
+  try {
+    localStorage.setItem('dama_piece_skin', activePieceSkinId)
+  }
+  catch (error) {
+    // التخزين المحلي قد لا يكون متاحًا، لا نوقف اللعبة بسبب هذا.
+  }
+  applyActiveSkins()
+}
+
+function setActiveCreamColor(id) {
+  activeCreamColorId = findCreamColor(id).id
+  try {
+    localStorage.setItem('dama_cream_color', activeCreamColorId)
+  }
+  catch (error) {
+    // التخزين المحلي قد لا يكون متاحًا، لا نوقف اللعبة بسبب هذا.
+  }
+  applyActiveSkins()
+}
+
+function setActiveBlackColor(id) {
+  activeBlackColorId = findBlackColor(id).id
+  try {
+    localStorage.setItem('dama_black_color', activeBlackColorId)
+  }
+  catch (error) {
+    // التخزين المحلي قد لا يكون متاحًا، لا نوقف اللعبة بسبب هذا.
+  }
+  applyActiveSkins()
+}
+
+applyActiveSkins()
+
+function buildShopSwatch(boardSkin, pieceSkin) {
+  const swatch = document.createElement('div')
+  swatch.className = 'shop-swatch'
+  setSkinVariables(swatch, boardSkin, pieceSkin)
+
+  for (let i = 0; i < 4; i++) {
+    const cell = document.createElement('span')
+    cell.className = `shop-swatch-square ${i % 2 ? 'dark' : 'light'}`
+    swatch.append(cell)
+  }
+
+  const creamPiece = document.createElement('span')
+  creamPiece.className = 'shop-swatch-piece cream-checker'
+
+  const blackPiece = document.createElement('span')
+  blackPiece.className = 'shop-swatch-piece black-checker'
+  const kingSymbol = document.createElement('span')
+  kingSymbol.className = 'king-symbol'
+  kingSymbol.textContent = '♛'
+  blackPiece.append(kingSymbol)
+
+  swatch.append(creamPiece, blackPiece)
+
+  return swatch
+}
+
+function renderShopGrid(container, skins, activeId, isBoardGrid) {
+  if (!container) return
+  container.replaceChildren()
+
+  skins.forEach(skin => {
+    const card = document.createElement('button')
+    card.type = 'button'
+    card.className = 'shop-card'
+    card.dataset.skinId = skin.id
+    if (skin.id === activeId) card.classList.add('selected')
+
+    const swatch = isBoardGrid
+      ? buildShopSwatch(skin, findPieceSkin(activePieceSkinId))
+      : buildShopSwatch(findBoardSkin(activeBoardSkinId), skin)
+
+    const label = document.createElement('span')
+    label.className = 'shop-card-label'
+    label.textContent = skin.name
+
+    const check = document.createElement('span')
+    check.className = 'shop-card-check'
+    check.textContent = '✓'
+
+    // زر معاينة صغير يظهر فوق التصميم فقط عندما يكون هذا الاختيار محدَّدًا
+    const previewBtn = document.createElement('button')
+    previewBtn.type = 'button'
+    previewBtn.className = 'shop-card-preview-btn'
+    previewBtn.setAttribute('aria-label', 'معاينة الشكل المختار')
+    previewBtn.title = 'معاينة'
+    previewBtn.textContent = '👁'
+    previewBtn.addEventListener('click', event => {
+      event.stopPropagation()
+      openShopPreview()
+    })
+    swatch.append(previewBtn)
+
+    card.append(swatch, label, check)
+
+    card.addEventListener('click', () => {
+      if (isBoardGrid) {
+        setActiveBoardSkin(skin.id)
+      }
+      else {
+        setActivePieceSkin(skin.id)
+      }
+      renderShopView()
+    })
+
+    container.append(card)
+  })
+}
+
+function renderColorGrid(container, options, activeId, onSelect) {
+  if (!container) return
+  container.replaceChildren()
+
+  options.forEach(color => {
+    const swatch = document.createElement('button')
+    swatch.type = 'button'
+    swatch.className = 'shop-color-swatch'
+    swatch.title = color.name
+    swatch.setAttribute('aria-label', color.name)
+    if (color.id === activeId) swatch.classList.add('selected')
+
+    swatch.style.background = `linear-gradient(145deg, ${color.a}, ${color.b})`
+    swatch.style.borderColor = color.border
+
+    swatch.addEventListener('click', () => {
+      onSelect(color.id)
+      renderShopView()
+    })
+
+    container.append(swatch)
+  })
+}
+
+function renderShopView() {
+  renderShopGrid(
+    document.querySelector('#shopBoardGrid'),
+    BOARD_SKINS,
+    activeBoardSkinId,
+    true
+  )
+  renderShopGrid(
+    document.querySelector('#shopPieceGrid'),
+    PIECE_SKINS,
+    activePieceSkinId,
+    false
+  )
+  renderColorGrid(
+    document.querySelector('#shopCreamColorGrid'),
+    CREAM_COLOR_OPTIONS,
+    activeCreamColorId,
+    setActiveCreamColor
+  )
+  renderColorGrid(
+    document.querySelector('#shopBlackColorGrid'),
+    BLACK_COLOR_OPTIONS,
+    activeBlackColorId,
+    setActiveBlackColor
+  )
+}
+
+function createShopPreviewPiece(color, showKing) {
+  const piece = document.createElement('div')
+  piece.className = `checker-piece ${color === 'cream' ? 'cream-checker' : 'black-checker'}`
+
+  if (showKing) {
+    const symbol = document.createElement('span')
+    symbol.className = 'king-symbol'
+    symbol.textContent = '♛'
+    piece.append(symbol)
+  }
+
+  return piece
+}
+
+// معاينة كاملة للوحة والقطع بالشكل المحفوظ حاليًا (يقرأ نفس متغيرات CSS المطبّقة على اللعبة الفعلية)
+function openShopPreview() {
+  document.querySelector('.shop-preview-overlay')?.remove()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'shop-preview-overlay'
+
+  const panel = document.createElement('div')
+  panel.className = 'shop-preview-panel'
+
+  const closeBtn = document.createElement('button')
+  closeBtn.type = 'button'
+  closeBtn.className = 'shop-preview-close'
+  closeBtn.textContent = '×'
+  closeBtn.addEventListener('click', () => overlay.remove())
+
+  const title = document.createElement('h3')
+  title.className = 'shop-preview-title'
+  title.textContent = 'معاينة الشكل المختار'
+
+  const board = document.createElement('div')
+  board.className = 'board shop-preview-board'
+
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const square = document.createElement('div')
+      square.className = `square ${(row + col) % 2 ? 'dark-square' : 'light-square'}`
+
+      if ((row + col) % 2 === 1) {
+        if (row < 3) {
+          square.append(createShopPreviewPiece('black', row === 1 && col === 2))
+        }
+        else if (row > 4) {
+          square.append(createShopPreviewPiece('cream', row === 6 && col === 5))
+        }
+      }
+
+      board.append(square)
+    }
+  }
+
+  panel.append(closeBtn, title, board)
+  overlay.append(panel)
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) overlay.remove()
+  })
+
+  document.body.append(overlay)
+}
+
+// ========================================
 // حالة اللعبة
 // ========================================
 // ========================================
@@ -252,6 +860,10 @@ socket.on('player-joined', (data) => {
   document.querySelector('#roomInviteDock')?.remove()
   document.querySelector('#roomInvitePage')?.remove()
   setActivePresenceRoom(onlineRoomCode, currentRoomWatchKey)
+
+  // صديقك دخل الروم فعلاً، فلا داعٍ لبقاء دعوته معلّقة في قائمة دعوات اللعب.
+  if (currentAuthUser) checkPendingGameInvites()
+
   onlineOpponentName = data?.playerName || 'صديقك'
   const opponentNameLabel =
     document.querySelector('#onlineOpponentName')
@@ -1224,6 +1836,13 @@ async function loadCloudProfile(user) {
               .levels
               ?.progress
               ?.rating
+          ),
+        grandmasterLevel:
+          normalizeGrandmasterLevel(
+            data
+              .levels
+              ?.progress
+              ?.grandmasterLevel
           )
       }
     },
@@ -1622,11 +2241,90 @@ const RATING_TIERS = [
   },
   {
     key: 'grandmaster',
-    label: 'جراند ماستر',
+    label: 'قراند ماستر',
     min: 71,
     max: Infinity
   }
 ]
+
+// ========================================
+// تصنيفات قراند ماستر الفرعية (أرقام رومانية I..XXX)
+// كل فوز أونلاين وأنت قراند ماستر يرفع المستوى حتى آخر رقم 30.
+// الشعار نفسه لكل المستويات، فقط يتطور بصريًا كل ما ارتفع الرقم.
+// ========================================
+
+const GRANDMASTER_MAX_LEVEL = 30
+
+const ROMAN_NUMERAL_MAP = [
+  [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+]
+
+function toRomanNumeral(number) {
+  let remaining = Math.max(1, Math.round(Number(number) || 1))
+  let result = ''
+
+  ROMAN_NUMERAL_MAP.forEach(([value, symbol]) => {
+    while (remaining >= value) {
+      result += symbol
+      remaining -= value
+    }
+  })
+
+  return result
+}
+
+function normalizeGrandmasterLevel(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return 1
+  }
+
+  return Math.max(
+    1,
+    Math.min(
+      GRANDMASTER_MAX_LEVEL,
+      Math.round(number)
+    )
+  )
+}
+
+function getGrandmasterLevel(profile = playerProfile) {
+  return normalizeGrandmasterLevel(
+    profile?.levels?.progress?.grandmasterLevel
+  )
+}
+
+function getGrandmasterGreekNumeral(level) {
+  return toRomanNumeral(
+    normalizeGrandmasterLevel(level)
+  )
+}
+
+function getGrandmasterStageClass(level) {
+  const safeLevel = normalizeGrandmasterLevel(level)
+
+  if (safeLevel >= GRANDMASTER_MAX_LEVEL) return 'gm-stage-4'
+  if (safeLevel >= 21) return 'gm-stage-3'
+  if (safeLevel >= 11) return 'gm-stage-2'
+  return 'gm-stage-1'
+}
+
+// يُستدعى بعد كل فوز أونلاين بينما اللاعب قراند ماستر بالفعل.
+function advanceGrandmasterLevel() {
+  if (!playerProfile.levels.progress) {
+    playerProfile.levels.progress = { rating: RATING_START }
+  }
+
+  const next =
+    getGrandmasterLevel() >= GRANDMASTER_MAX_LEVEL
+      ? GRANDMASTER_MAX_LEVEL
+      : getGrandmasterLevel() + 1
+
+  playerProfile.levels.progress.grandmasterLevel = next
+
+  return next
+}
 
 let lastRatingChange = 0
 let lastRatingBefore = RATING_START
@@ -1715,6 +2413,16 @@ function getPlayerRatingState(
         : 100
   }
 
+  else if (tier.key === 'grandmaster') {
+    const grandmasterLevel =
+      getGrandmasterLevel(profile)
+
+    percent =
+      Math.round(
+        (grandmasterLevel / GRANDMASTER_MAX_LEVEL) * 100
+      )
+  }
+
   else {
     percent = 100
   }
@@ -1724,6 +2432,10 @@ function getPlayerRatingState(
     tier,
     nextTier,
     nextRating,
+    grandmasterLevel:
+      tier.key === 'grandmaster'
+        ? getGrandmasterLevel(profile)
+        : null,
     percent:
       Math.max(
         0,
@@ -1862,12 +2574,56 @@ function setRankCheckerElement(
     )
   })
 
+  element.classList.remove(
+    'gm-stage-1',
+    'gm-stage-2',
+    'gm-stage-3',
+    'gm-stage-4'
+  )
+
   element.classList.add(
     getRankCheckerClass(state)
   )
 
-  element.title =
-    `${state.tier.label} • ${state.rating} نقطة`
+  let greekBadge =
+    element.querySelector(
+      '.rank-checker-gm-badge'
+    )
+
+  if (state.tier.key === 'grandmaster') {
+    const greekNumeral =
+      getGrandmasterGreekNumeral(
+        state.grandmasterLevel
+      )
+
+    element.classList.add(
+      getGrandmasterStageClass(
+        state.grandmasterLevel
+      )
+    )
+
+    if (!greekBadge) {
+      greekBadge =
+        document.createElement('span')
+
+      greekBadge.className =
+        'rank-checker-gm-badge'
+
+      element.append(greekBadge)
+    }
+
+    greekBadge.textContent = greekNumeral
+
+    element.title =
+      `${state.tier.label} ${greekNumeral} • ${state.rating} نقطة`
+  }
+
+  else {
+    greekBadge?.remove()
+
+    element.title =
+      `${state.tier.label} • ${state.rating} نقطة`
+  }
 }
 
 function createDefaultProfile() {
@@ -1929,7 +2685,8 @@ online: {
 },
 
 progress: {
-  rating: RATING_START
+  rating: RATING_START,
+  grandmasterLevel: 1
 }
     },
 
@@ -2002,6 +2759,14 @@ function loadProfile() {
                 .levels
                 ?.progress
                 ?.rating
+            ),
+          grandmasterLevel: resetLocalRating
+            ? 1
+            : normalizeGrandmasterLevel(
+              data
+                .levels
+                ?.progress
+                ?.grandmasterLevel
             )
         }
       },
@@ -2149,6 +2914,14 @@ function recordGameResult(
         playerWon,
         options.performance || getOnlinePerformanceSnapshot()
       )
+
+    // كل فوز أونلاين وأنت قراند ماستر يرفع الرقم اليوناني حتى 30.
+    if (
+      playerWon &&
+      getRatingTier(ratingResult.after).key === 'grandmaster'
+    ) {
+      advanceGrandmasterLevel()
+    }
   }
 
   // ========================================
@@ -2213,17 +2986,44 @@ function ensureProgressionStyles() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 48px;
-      height: 24px;
-      padding: 0 9px;
+      gap: 3px;
+      min-width: 40px;
+      height: 25px;
+      padding: 0 11px;
       border-radius: 999px;
       font-size: 11px;
-      font-weight: 800;
-      color: #f7e9d2;
-      background: rgba(97, 55, 30, 0.72);
-      border: 1px solid rgba(255,255,255,.12);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .02em;
+      line-height: 1;
+      color: #f6dfae;
+      background: linear-gradient(150deg, #3d2c18, #1e1509);
+      border: 1px solid rgba(230, 192, 141, .4);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.14),
+        0 3px 8px rgba(0,0,0,.32);
       white-space: nowrap;
+    }
+
+    .home-account-actions .profile-top-btn {
+      gap: 10px;
+    }
+
+    #profileRankPiece {
+      flex: 0 0 auto;
+    }
+
+    #profileButtonName {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
+    #profileLevelBadge {
+      flex: 0 0 auto;
     }
 
     .rank-checker {
@@ -2233,6 +3033,7 @@ function ensureProgressionStyles() {
       width: 28px;
       height: 28px;
       flex: 0 0 auto;
+      overflow: visible;
       border-radius: 50%;
       border: 2px solid rgba(255,255,255,.24);
       box-shadow:
@@ -2255,6 +3056,41 @@ function ensureProgressionStyles() {
       font-size: 11px;
       line-height: 1;
       font-weight: 900;
+    }
+
+    .rank-checker-gm-badge {
+      position: absolute;
+      z-index: 2;
+      bottom: -3px;
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 15px;
+      padding: 0 3px;
+      border-radius: 999px;
+      background: linear-gradient(150deg, #3d2c18, #1e1509);
+      border: 1px solid rgba(255, 228, 169, .65);
+      color: #ffe8b8;
+      font-size: 8px;
+      font-weight: 900;
+      line-height: 13px;
+      text-align: center;
+      white-space: nowrap;
+      box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    }
+
+    .rank-checker-large .rank-checker-gm-badge {
+      bottom: -6px;
+      min-width: 22px;
+      padding: 0 5px;
+      font-size: 12px;
+      line-height: 18px;
+      border-width: 2px;
+    }
+
+    /* الشارة الصغيرة (زر الحساب وقوائم الصدارة) تعرض الرقم اليوناني عبر
+       "player-level-badge" المجاورة فقط، حتى لا يزدحم شكل التاج الصغير */
+    .rank-checker-mini .rank-checker-gm-badge {
+      display: none;
     }
 
     .rank-checker-mini {
@@ -2346,6 +3182,61 @@ function ensureProgressionStyles() {
       content: '♚';
       color: #3b210c;
       text-shadow: 0 1px 0 rgba(255,255,255,.35);
+    }
+
+    /* تطوّر شعار قراند ماستر بصريًا مع ارتفاع الرقم اليوناني (نفس الشعار، بريق أقوى) */
+    .rank-grandmaster.gm-stage-2 {
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,.44),
+        inset 0 -4px 6px rgba(84,43,8,.34),
+        0 0 0 2px rgba(230,190,110,.22),
+        0 6px 20px rgba(222,176,91,.42);
+    }
+
+    .rank-grandmaster.gm-stage-3 {
+      border-color: #ffedc0;
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,.5),
+        inset 0 -4px 6px rgba(84,43,8,.3),
+        0 0 0 3px rgba(240,205,130,.3),
+        0 7px 22px rgba(222,176,91,.5);
+    }
+
+    .rank-grandmaster.gm-stage-4 {
+      border-color: #fff3d2;
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,.58),
+        inset 0 -4px 6px rgba(84,43,8,.26),
+        0 0 0 3px rgba(255,222,150,.42),
+        0 0 22px rgba(255,214,120,.55),
+        0 8px 26px rgba(222,176,91,.6);
+      animation: gmShimmer 2.4s ease-in-out infinite;
+    }
+
+    @keyframes gmShimmer {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.16); }
+    }
+
+    @media (max-width: 650px) {
+      .rank-checker-large {
+        width: 52px;
+        height: 52px;
+        border-width: 2px;
+      }
+
+      .rank-checker-large::after {
+        font-size: 19px;
+      }
+
+      .rank-checker-large .rank-checker-gm-badge {
+        bottom: -5px;
+        min-width: 18px;
+        padding: 0 4px;
+        font-size: 10px;
+        line-height: 15px;
+        border-width: 1px;
+      }
     }
 
     .leaderboard-player-name-line {
@@ -2754,6 +3645,14 @@ function showHome() {
             class="secondary-btn home-action-btn leaderboard-action-btn"
           >
             ♛ لوحة الصدارة
+          </button>
+
+          <button
+            id="shopBtn"
+            class="secondary-btn home-action-btn shop-action-btn"
+            type="button"
+          >
+            🛍️ المتجر
           </button>
         </div>
 
@@ -3415,6 +4314,76 @@ function showHome() {
         ></div>
       </section>
 
+      <!-- ========================================
+           المتجر
+           ======================================== -->
+
+      <section
+        id="shopView"
+        class="profile-view shop-view"
+        hidden
+      >
+        <div class="profile-page-header leaderboard-page-header">
+          <button
+            id="shopBackBtn"
+            class="profile-back-btn"
+            type="button"
+          >
+            ← رجوع
+          </button>
+
+          <div>
+            <div class="profile-big-avatar">
+              🛍️
+            </div>
+
+            <h2>
+              المتجر
+            </h2>
+
+            <p>
+              خصّص شكل اللوحة وشكل القطع
+            </p>
+          </div>
+        </div>
+
+        <div class="shop-tabs">
+          <button
+            type="button"
+            class="shop-tab-btn active"
+            data-shop-tab="board"
+          >
+            شكل اللوحة
+          </button>
+          <button
+            type="button"
+            class="shop-tab-btn"
+            data-shop-tab="pieces"
+          >
+            شكل القطع
+          </button>
+        </div>
+
+        <div id="shopBoardTab" class="shop-tab-panel">
+          <div id="shopBoardGrid" class="shop-grid"></div>
+        </div>
+
+        <div id="shopPieceTab" class="shop-tab-panel" hidden>
+          <div class="shop-color-section">
+            <h3 class="shop-section-title">لون القطعة البيضاء</h3>
+            <div id="shopCreamColorGrid" class="shop-color-grid"></div>
+          </div>
+
+          <div class="shop-color-section">
+            <h3 class="shop-section-title">لون القطعة السوداء</h3>
+            <div id="shopBlackColorGrid" class="shop-color-grid"></div>
+          </div>
+
+          <h3 class="shop-section-title">شكل القطعة</h3>
+          <div id="shopPieceGrid" class="shop-grid"></div>
+        </div>
+      </section>
+
     </main>
 
 
@@ -3659,15 +4628,21 @@ function updateProfileUI() {
 
   if (levelBadge) {
     levelBadge.textContent =
-      `${ratingState.rating}`
+      ratingState.tier.key === 'grandmaster'
+        ? getGrandmasterGreekNumeral(ratingState.grandmasterLevel)
+        : `${ratingState.rating}`
 
     levelBadge.title =
-      ratingState.tier.label
+      ratingState.tier.key === 'grandmaster'
+        ? `${ratingState.tier.label} • ${ratingState.rating} نقطة`
+        : ratingState.tier.label
   }
 
   if (pageLevelBadge) {
     pageLevelBadge.textContent =
-      `${ratingState.tier.label} • ${ratingState.rating}`
+      ratingState.tier.key === 'grandmaster'
+        ? `${ratingState.tier.label} ${getGrandmasterGreekNumeral(ratingState.grandmasterLevel)} • ${ratingState.rating}`
+        : `${ratingState.tier.label} • ${ratingState.rating}`
   }
 
   if (xpText) {
@@ -3679,7 +4654,7 @@ function updateProfileUI() {
     xpTotal.textContent =
       ratingState.nextTier
         ? `التالي: ${ratingState.nextTier.label} عند ${ratingState.nextRating}`
-        : 'جراند ماستر • بلا حد أعلى'
+        : `المستوى ${getGrandmasterGreekNumeral(ratingState.grandmasterLevel)} • ${ratingState.grandmasterLevel}/${GRANDMASTER_MAX_LEVEL}`
   }
 
   if (xpFill) {
@@ -4288,7 +5263,7 @@ async function openPublicPlayerProfile(
         </h2>
 
         <span class="player-level-badge">
-          ${escapeHtml(ratingState.tier.label)} • ${ratingState.rating}
+          ${escapeHtml(ratingState.tier.label)}${ratingState.tier.key === 'grandmaster' ? ` ${getGrandmasterGreekNumeral(ratingState.grandmasterLevel)}` : ''} • ${ratingState.rating}
         </span>
       </div>
 
@@ -4302,7 +5277,7 @@ async function openPublicPlayerProfile(
             ${
               ratingState.nextTier
                 ? `التالي: ${escapeHtml(ratingState.nextTier.label)} عند ${ratingState.nextRating}`
-                : 'جراند ماستر • بلا حد أعلى'
+                : `المستوى ${getGrandmasterGreekNumeral(ratingState.grandmasterLevel)} • ${ratingState.grandmasterLevel}/${GRANDMASTER_MAX_LEVEL}`
             }
           </span>
         </div>
@@ -4584,6 +5559,11 @@ function setupHomeEvents() {
       '#publicPlayerView'
     )
 
+  const shopView =
+    document.querySelector(
+      '#shopView'
+    )
+
 
   // ========================================
   // فتح الملف الشخصي
@@ -4732,6 +5712,59 @@ function setupHomeEvents() {
         homeAccountActions.hidden = false
       }
     )
+
+
+  // ========================================
+  // المتجر
+  // ========================================
+
+  document
+    .querySelector('#shopBtn')
+    .addEventListener(
+      'click',
+      () => {
+        mainContent.hidden = true
+        profileView.hidden = true
+        friendsView.hidden = true
+        leaderboardView.hidden = true
+        homeAccountActions.hidden = true
+        stopFriendsRefresh()
+
+        if (shopView) {
+          shopView.hidden = false
+          renderShopView()
+        }
+      }
+    )
+
+  document
+    .querySelector('#shopBackBtn')
+    .addEventListener(
+      'click',
+      () => {
+        if (shopView) shopView.hidden = true
+        mainContent.hidden = false
+        homeAccountActions.hidden = false
+      }
+    )
+
+  document
+    .querySelectorAll('.shop-tab-btn')
+    .forEach(tabBtn => {
+      tabBtn.addEventListener('click', () => {
+        document
+          .querySelectorAll('.shop-tab-btn')
+          .forEach(btn => btn.classList.remove('active'))
+        tabBtn.classList.add('active')
+
+        const targetTab = tabBtn.dataset.shopTab
+        const boardTab = document.querySelector('#shopBoardTab')
+        const pieceTab = document.querySelector('#shopPieceTab')
+
+        if (boardTab) boardTab.hidden = targetTab !== 'board'
+        if (pieceTab) pieceTab.hidden = targetTab !== 'pieces'
+      })
+    })
 
 
   // ========================================
@@ -6566,7 +7599,7 @@ function animatePieceMove(piece, target) {
   piece.getBoundingClientRect()
 
   requestAnimationFrame(() => {
-    piece.style.transition = 'transform 0.32s cubic-bezier(.22,.61,.36,1)'
+    piece.style.transition = 'transform 0.42s cubic-bezier(.22,.61,.36,1)'
     piece.style.transform = ''
   })
 
